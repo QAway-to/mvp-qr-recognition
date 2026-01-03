@@ -3,7 +3,9 @@
 //! Реализация алгоритмического обнаружения QR-кодов через finder patterns
 
 use image::{GrayImage, Luma};
+use image::{GrayImage, Luma};
 use serde::{Deserialize, Serialize};
+use crate::ml_detection::OnnxDetector;
 
 /// Конфигурация детектора
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -53,16 +55,32 @@ struct FinderPattern {
 /// Детектор QR-кодов
 pub struct QRDetector {
     config: DetectorConfig,
+    ml_detector: Option<OnnxDetector>,
 }
 
 impl QRDetector {
     /// Создание детектора
     pub fn new(config: DetectorConfig) -> Self {
-        Self { config }
+        Self { config, ml_detector: None }
+    }
+
+    /// Установка ML детектора
+    pub fn set_ml_detector(&mut self, detector: OnnxDetector) {
+        self.ml_detector = Some(detector);
     }
     
     /// Обнаружение всех QR-кодов на изображении
     pub fn detect(&self, img: &GrayImage) -> Vec<DetectedQR> {
+        // 0. Если есть ML-детектор, пробуем его сначала (или комбинируем)
+        if let Some(ml) = &self.ml_detector {
+           if let Ok(ml_results) = ml.detect(img) {
+               if !ml_results.is_empty() {
+                   // Можно вернуть ML результаты, или объединить с алгоритмическими
+                   return ml_results;
+               }
+           }
+        }
+
         let mut results = Vec::new();
         
         // 1. Поиск finder patterns

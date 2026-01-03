@@ -116,6 +116,20 @@ impl WasmQRScanner {
             Ok(None) => Ok(JsValue::NULL),
             Err(e) => Err(JsError::new(&e.to_string())),
         }
+            Err(e) => Err(JsError::new(&e.to_string())),
+        }
+    }
+
+    /// Загрузка ML модели (ONNX)
+    /// 
+    /// @param model_data - Uint8Array с байтами модели (.onnx)
+    #[wasm_bindgen(js_name = loadModel)]
+    pub fn load_model(&mut self, model_data: &[u8]) -> Result<(), JsError> {
+        let detector = qr_core::OnnxDetector::load(model_data)
+           .map_err(|e| JsError::new(&e.to_string()))?;
+        
+        self.scanner.set_ml_detector(detector);
+        Ok(())
     }
     
     /// Конвертация RGBA в Grayscale
