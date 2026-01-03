@@ -18,9 +18,10 @@ export default function Home() {
     useEffect(() => {
         async function loadWasm() {
             try {
-                const wasm = await import('/pkg/qr_wasm.js');
-                await wasm.default();
-                const scannerInstance = new wasm.WasmQRScanner();
+                // Dynamic import from public folder
+                const wasmModule = await import('../public/pkg/qr_wasm.js');
+                await wasmModule.default();
+                const scannerInstance = new wasmModule.WasmQRScanner();
                 setScanner(scannerInstance);
                 setWasmReady(true);
                 setStatus('Ready');
