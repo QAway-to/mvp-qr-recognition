@@ -73,13 +73,23 @@ impl ImageProcessor {
     
     /// Адаптивная бинаризация (Bradley/Otsu)
     pub fn adaptive_threshold(&self, img: &GrayImage) -> GrayImage {
-        // Используем адаптивный порог из imageproc
-        // block_size должен быть нечётным
-        let block_size = if self.config.block_size % 2 == 0 {
-            self.config.block_size + 1
-        } else {
-            self.config.block_size
-        };
+        let (width, height) = img.dimensions();
+        
+        // Safety check: block_size must be less than image dimensions
+        let max_block = width.min(height).saturating_sub(1);
+        if max_block < 3 {
+            // Image too small for adaptive threshold, return as-is
+            return img.clone();
+        }
+        
+        // block_size должен быть нечётным и меньше размера изображения
+        let mut block_size = self.config.block_size.min(max_block);
+        if block_size % 2 == 0 {
+            block_size = block_size.saturating_sub(1).max(3);
+        }
+        if block_size < 3 {
+            block_size = 3;
+        }
         
         adaptive_threshold(img, block_size)
     }
