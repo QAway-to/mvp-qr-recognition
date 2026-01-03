@@ -116,8 +116,6 @@ impl WasmQRScanner {
             Ok(None) => Ok(JsValue::NULL),
             Err(e) => Err(JsError::new(&e.to_string())),
         }
-            Err(e) => Err(JsError::new(&e.to_string())),
-        }
     }
 
     /// Загрузка ML модели (ONNX)

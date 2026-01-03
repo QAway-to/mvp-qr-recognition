@@ -24,7 +24,7 @@ impl OnnxDetector {
     }
 
     /// Detect QR codes in image
-    pub fn detect(&self, img: &GrayImage) -> anyhow::Result<Vec<DetectedQR>> {
+    pub fn detect(&self, _img: &GrayImage) -> anyhow::Result<Vec<DetectedQR>> {
         // TODO: Implement actual inference
         // 1. Resize image to model input size (e.g. 640x640)
         // 2. Convert to Tensor

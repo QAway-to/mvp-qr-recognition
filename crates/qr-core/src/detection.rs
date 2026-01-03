@@ -3,7 +3,6 @@
 //! Реализация алгоритмического обнаружения QR-кодов через finder patterns
 
 use image::{GrayImage, Luma};
-use image::{GrayImage, Luma};
 use serde::{Deserialize, Serialize};
 use crate::ml_detection::OnnxDetector;
 

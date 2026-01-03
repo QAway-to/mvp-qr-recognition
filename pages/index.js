@@ -39,6 +39,8 @@ export default function Home() {
     const [status, setStatus] = useState('Loading WASM...');
     const [mode, setMode] = useState('upload');
     const [scanning, setScanning] = useState(false);
+    const [batchResults, setBatchResults] = useState([]);
+    const [mlLoaded, setMlLoaded] = useState(false);
 
     const videoRef = useRef(null);
     const canvasRef = useRef(null);
@@ -188,6 +190,45 @@ export default function Home() {
         }
     };
 
+    const handleBatchUpload = async (event) => {
+        const files = Array.from(event.target.files);
+        if (!files.length || !scanner) return;
+
+        setBatchResults([]);
+        setStatus(`Processing ${files.length} files...`);
+
+        const results = [];
+        let success = 0;
+
+        for (const file of files) {
+            try {
+                const arrayBuffer = await file.arrayBuffer();
+                const uint8Array = new Uint8Array(arrayBuffer);
+                const start = performance.now();
+                const result = scanner.scanImage(uint8Array);
+                const time = performance.now() - start;
+
+                const hasQr = result?.qr_codes?.length > 0;
+                if (hasQr) success++;
+
+                results.push({
+                    name: file.name,
+                    status: hasQr ? '✅ Found' : '❌ No QR',
+                    content: hasQr ? result.qr_codes[0].content : '-',
+                    time: Math.round(time)
+                });
+
+                // Update periodically
+                setBatchResults([...results]);
+            } catch (e) {
+                results.push({ name: file.name, status: '⚠️ Error', content: e.message, time: 0 });
+                setBatchResults([...results]);
+            }
+        }
+
+        setStatus(`Done. Success: ${success}/${files.length} (${Math.round(success / files.length * 100)}%)`);
+    };
+
     const downloadLogs = () => {
         const text = JSON.stringify(window.__QR_DEBUG_LOGS || [], null, 2);
         const blob = new Blob([text], { type: 'application/json' });
@@ -223,6 +264,9 @@ export default function Home() {
                     <button className={mode === 'upload' ? 'active' : ''} onClick={() => { setMode('upload'); stopCamera(); }}>
                         📁 Upload
                     </button>
+                    <button className={mode === 'batch' ? 'active' : ''} onClick={() => { setMode('batch'); stopCamera(); }}>
+                        📚 Batch Test
+                    </button>
                 </div>
 
                 {mode === 'camera' && (
@@ -243,8 +287,42 @@ export default function Home() {
                     <div className="upload-section">
                         <label className="dropzone">
                             <input type="file" accept="image/*" onChange={handleFileUpload} disabled={!wasmReady} />
-                            <span>📷 Click or drop image here</span>
+                            <span>📷 Click or drop SINGLE image here</span>
                         </label>
+                    </div>
+                )}
+
+                {mode === 'batch' && (
+                    <div className="batch-section">
+                        <label className="dropzone">
+                            <input type="file" accept="image/*" multiple onChange={handleBatchUpload} disabled={!wasmReady} />
+                            <span>📚 Select MULTIPLE files for Mass Test</span>
+                        </label>
+
+                        {batchResults.length > 0 && (
+                            <div className="batch-results">
+                                <table style={{ width: '100%', marginTop: '20px', borderCollapse: 'collapse' }}>
+                                    <thead>
+                                        <tr style={{ textAlign: 'left', borderBottom: '1px solid #333' }}>
+                                            <th>File</th>
+                                            <th>Status</th>
+                                            <th>Time (ms)</th>
+                                            <th>Content</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {batchResults.map((res, i) => (
+                                            <tr key={i} style={{ borderBottom: '1px solid #222' }}>
+                                                <td>{res.name}</td>
+                                                <td>{res.status}</td>
+                                                <td>{res.time}</td>
+                                                <td style={{ maxWidth: '200px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{res.content}</td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+                        )}
                     </div>
                 )}
 
