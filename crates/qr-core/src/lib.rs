@@ -167,11 +167,17 @@ impl QRScanner {
     
     /// Сканирование GrayImage
     pub fn scan_image(&self, gray: &GrayImage, start: std::time::Instant) -> Result<ScanResult, QRError> {
+        log::info!("Starting scan_image, size: {:?}", gray.dimensions());
+
         // Предобработка
+        log::info!("Starting preprocessing");
         let processed = self.processor.process(gray);
+        log::info!("Preprocessing done, resulting size: {:?}", processed.dimensions());
         
         // Детекция QR-кодов
+        log::info!("Starting detection");
         let detected = self.detector.detect(&processed);
+        log::info!("Detection done, found: {}", detected.len());
         
         // Декодирование каждого QR
         let mut qr_codes = Vec::new();
@@ -179,9 +185,11 @@ impl QRScanner {
         let mut best_payment_idx = None;
         
         for (idx, detection) in detected.iter().enumerate() {
+            log::info!("Decoding detected QR #{}", idx);
             // Пробуем декодировать
             match self.decoder.decode(&detection.image) {
                 Ok(decoded) => {
+                    log::info!("Decoded successfully: {:?}", decoded.content);
                     let content_type = ContentType::detect(&decoded.content);
                     let payment = if content_type == ContentType::Payment {
                         self.payment_parser.parse(&decoded.content)
@@ -212,7 +220,9 @@ impl QRScanner {
         
         // Если не нашли QR через детектор, пробуем декодировать всё изображение напрямую
         if qr_codes.is_empty() {
+            log::info!("No QRs found via detection, trying full image decode");
             if let Ok(decoded) = self.decoder.decode(&processed) {
+                log::info!("Full image decode success: {:?}", decoded.content);
                 let content_type = ContentType::detect(&decoded.content);
                 let payment = if content_type == ContentType::Payment {
                     self.payment_parser.parse(&decoded.content)
@@ -226,13 +236,17 @@ impl QRScanner {
                     content_type,
                     payment,
                     confidence: 1.0,
-                });
+                    });
                 
                 if best_payment_idx.is_none() && qr_codes.last().map(|q| q.content_type == ContentType::Payment).unwrap_or(false) {
                     best_payment_idx = Some(0);
                 }
+            } else {
+                log::info!("Full image decode failed");
             }
         }
+        
+        log::info!("Scan complete, found {} codes", qr_codes.len());
         
         Ok(ScanResult {
             qr_codes,

@@ -1,12 +1,35 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import Head from 'next/head';
 
-// Debug logs
-const logs = [];
+// Global debug setup - hook console to capture Rust/WASM logs
+if (typeof window !== 'undefined') {
+    window.__QR_DEBUG_LOGS = window.__QR_DEBUG_LOGS || [];
+
+    if (!window.__CONSOLE_HOOKED) {
+        window.__CONSOLE_HOOKED = true;
+        const methods = ['log', 'info', 'warn', 'error', 'debug'];
+        methods.forEach(method => {
+            const original = console[method];
+            console[method] = function (...args) {
+                if (window.__QR_DEBUG_LOGS) {
+                    window.__QR_DEBUG_LOGS.push({
+                        t: new Date().toISOString(),
+                        cat: 'CONSOLE_' + method.toUpperCase(),
+                        msg: args.map(a => String(a)).join(' '),
+                        data: null
+                    });
+                }
+                original.apply(console, args);
+            };
+        });
+    }
+}
+
 function log(cat, msg, data = null) {
-    const entry = { t: new Date().toISOString(), cat, msg, data };
-    logs.push(entry);
-    console.log(`[${cat}] ${msg}`, data || '');
+    if (typeof window !== 'undefined') {
+        window.__QR_DEBUG_LOGS.push({ t: new Date().toISOString(), cat, msg, data });
+    }
+    console.info(`[${cat}] ${msg}`, data || '');
 }
 
 export default function Home() {
@@ -22,12 +45,6 @@ export default function Home() {
     const streamRef = useRef(null);
     const intervalRef = useRef(null);
     const wasmModuleRef = useRef(null);
-
-    useEffect(() => {
-        log('INIT', 'Starting WASM load');
-        loadWasm();
-        return () => stopCamera();
-    }, []);
 
     const loadWasm = async () => {
         try {
@@ -57,7 +74,7 @@ export default function Home() {
 
             wasmModuleRef.current = wasmModule;
 
-            // Initialize with the fetch response (this is supported per line 458-459)
+            // Initialize with the fetch response
             log('WASM', 'Calling init with fetch response');
             await wasmModule.default(wasmResponse);
             log('WASM', 'Init complete');
@@ -80,16 +97,25 @@ export default function Home() {
         }
     };
 
-    const downloadLogs = () => {
-        const text = JSON.stringify(logs, null, 2);
-        const blob = new Blob([text], { type: 'application/json' });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = 'qr-scanner-logs.json';
-        a.click();
-        URL.revokeObjectURL(url);
-    };
+    const scanFrame = useCallback(() => {
+        if (!scanner || !videoRef.current || !canvasRef.current) return;
+        const video = videoRef.current;
+        const canvas = canvasRef.current;
+        const ctx = canvas.getContext('2d');
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+        ctx.drawImage(video, 0, 0);
+        const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+        try {
+            const result = scanner.scanImageData(imageData.data, canvas.width, canvas.height);
+            if (result?.qr_codes?.length > 0) {
+                setResults(result.qr_codes);
+                setStatus(`Found ${result.qr_codes.length} QR code(s)`);
+            }
+        } catch (e) {
+            log('SCAN', 'Frame error', e.message);
+        }
+    }, [scanner]);
 
     const stopCamera = useCallback(() => {
         if (intervalRef.current) {
@@ -123,24 +149,6 @@ export default function Home() {
             setStatus('Camera error: ' + error.message);
         }
     };
-
-    const scanFrame = useCallback(() => {
-        if (!scanner || !videoRef.current || !canvasRef.current) return;
-        const video = videoRef.current;
-        const canvas = canvasRef.current;
-        const ctx = canvas.getContext('2d');
-        canvas.width = video.videoWidth;
-        canvas.height = video.videoHeight;
-        ctx.drawImage(video, 0, 0);
-        const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-        try {
-            const result = scanner.scanImageData(imageData.data, canvas.width, canvas.height);
-            if (result?.qr_codes?.length > 0) {
-                setResults(result.qr_codes);
-                setStatus(`Found ${result.qr_codes.length} QR code(s)`);
-            }
-        } catch (e) { /* silent */ }
-    }, [scanner]);
 
     const handleFileUpload = async (event) => {
         const file = event.target.files[0];
@@ -179,6 +187,23 @@ export default function Home() {
             setStatus('Error: ' + error.message);
         }
     };
+
+    const downloadLogs = () => {
+        const text = JSON.stringify(window.__QR_DEBUG_LOGS || [], null, 2);
+        const blob = new Blob([text], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'qr-scanner-logs.json';
+        a.click();
+        URL.revokeObjectURL(url);
+    };
+
+    useEffect(() => {
+        log('INIT', 'Starting WASM load');
+        loadWasm();
+        return () => stopCamera();
+    }, []);
 
     return (
         <>
