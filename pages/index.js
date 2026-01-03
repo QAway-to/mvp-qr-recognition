@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import Head from 'next/head';
+import Script from 'next/script';
 
 export default function Home() {
     const [scanner, setScanner] = useState(null);
@@ -14,24 +15,24 @@ export default function Home() {
     const streamRef = useRef(null);
     const intervalRef = useRef(null);
 
-    // Load WASM on mount
-    useEffect(() => {
-        async function loadWasm() {
-            try {
-                // Dynamic import from public folder
-                const wasmModule = await import('../public/pkg/qr_wasm.js');
-                await wasmModule.default();
-                const scannerInstance = new wasmModule.WasmQRScanner();
+    // Initialize WASM after script loads
+    const initWasm = async () => {
+        try {
+            // wasm_bindgen is exposed globally by the script
+            if (typeof window !== 'undefined' && window.wasm_bindgen) {
+                await window.wasm_bindgen('/pkg/qr_wasm_bg.wasm');
+                const scannerInstance = new window.wasm_bindgen.WasmQRScanner();
                 setScanner(scannerInstance);
                 setWasmReady(true);
                 setStatus('Ready');
-            } catch (error) {
-                console.error('WASM load error:', error);
-                setStatus('WASM load failed: ' + error.message);
             }
+        } catch (error) {
+            console.error('WASM init error:', error);
+            setStatus('Error: ' + error.message);
         }
-        loadWasm();
+    };
 
+    useEffect(() => {
         return () => {
             stopCamera();
         };
@@ -124,6 +125,14 @@ export default function Home() {
                 <meta name="description" content="QR Code Scanner with WASM" />
                 <meta name="viewport" content="width=device-width, initial-scale=1" />
             </Head>
+
+            {/* Load WASM JS file */}
+            <Script
+                src="/pkg/qr_wasm.js"
+                strategy="afterInteractive"
+                onLoad={initWasm}
+                onError={(e) => setStatus('Failed to load WASM script')}
+            />
 
             <main className="container">
                 <h1>📱 QR Scanner</h1>
