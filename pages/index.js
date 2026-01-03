@@ -260,10 +260,11 @@ export default function Home() {
                                 if (!cropResult?.qr_codes?.length && w > 0 && h > 0) {
                                     log('SCAN', 'Standard scan failed on crop, trying rotation...');
 
-                                    // Try 45 degrees
-                                    const angles = [45];
+                                    // Try different angles to catch 30, 45, 60 degree rotations
+                                    const angles = [30, 45, 60];
 
                                     for (const angle of angles) {
+                                        log('SCAN', `Attempting rotation: ${angle}°`);
                                         const rad = (angle * Math.PI) / 180;
                                         const cos = Math.abs(Math.cos(rad));
                                         const sin = Math.abs(Math.sin(rad));
@@ -287,6 +288,8 @@ export default function Home() {
                                             log('SCAN', `✅ Success with ${angle}° rotation!`);
                                             cropResult = rotResult;
                                             break;
+                                        } else {
+                                            log('SCAN', `❌ Failed with ${angle}° rotation`);
                                         }
                                     }
                                 }
