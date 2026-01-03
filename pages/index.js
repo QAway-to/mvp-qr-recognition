@@ -89,6 +89,23 @@ export default function Home() {
                 setWasmReady(true);
                 setStatus('Ready');
                 log('WASM', 'Ready!');
+
+                // Try to load ML model
+                try {
+                    log('ML', 'Fetching yolov8n-qr.onnx...');
+                    const modelResp = await fetch('/models/yolov8n-qr.onnx');
+                    if (modelResp.ok) {
+                        const modelBuf = await modelResp.arrayBuffer();
+                        const modelBytes = new Uint8Array(modelBuf);
+                        scannerInstance.loadModel(modelBytes);
+                        setMlLoaded(true);
+                        log('ML', 'Model loaded successfully (YOLOv8)');
+                    } else {
+                        log('ML', 'Model not found (using Fallback)');
+                    }
+                } catch (e) {
+                    log('ML', 'Failed to load model', e);
+                }
             } else {
                 log('WASM', 'ERROR: No WasmQRScanner in exports');
                 setStatus('Error: WasmQRScanner not found');
