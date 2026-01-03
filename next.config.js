@@ -13,10 +13,10 @@ const nextConfig = {
             layers: true,
         };
 
-        // Fix for "import.meta" error in onnxruntime-web
+        // Fix for "import.meta" error in onnxruntime-web by using the CommonJS build
         config.resolve.alias = {
             ...config.resolve.alias,
-            "onnxruntime-web/all": path.join(__dirname, "node_modules/onnxruntime-web/dist/ort.all.min.mjs"),
+            "onnxruntime-web": path.join(__dirname, "node_modules/onnxruntime-web/dist/ort.all.min.js"),
         };
 
         // Copy ONNX Runtime WASM files to public directory
