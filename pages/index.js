@@ -196,218 +196,241 @@ export default function Home() {
             let result = scanner.scanImage(uint8Array);
 
             // Step 2: If no QR found AND ML is available, use ML detection
-            if ((!result?.qr_codes || result.qr_codes.length === 0) && mlDetectorRef.current) {
-                log('SCAN', 'No QR found, trying ML detection...');
+            if ((!result?.qr_codes || result.qr_codes.length === 0)) {
+                if (!mlDetectorRef.current && ENABLE_ML_DETECTION && !mlLoaded) {
+                    setStatus('Waiting for ML model to load...');
+                    log('SCAN', 'Waiting for ML model to load...');
 
-                // Create ImageData from file for ML
-                const blob = new Blob([uint8Array], { type: file.type });
-                const bitmap = await createImageBitmap(blob);
-                const canvas = document.createElement('canvas');
-                canvas.width = bitmap.width;
-                canvas.height = bitmap.height;
-                const ctx = canvas.getContext('2d');
-                ctx.drawImage(bitmap, 0, 0);
-                const imageData = ctx.getImageData(0, 0, bitmap.width, bitmap.height);
+                    // Wait for model to load (max 10 seconds)
+                    const waitForModel = new Promise((resolve) => {
+                        const checkInterval = setInterval(() => {
+                            if (mlDetectorRef.current) {
+                                clearInterval(checkInterval);
+                                resolve(true);
+                            }
+                        }, 500);
+                        setTimeout(() => {
+                            clearInterval(checkInterval);
+                            resolve(false);
+                        }, 10000);
+                    });
 
-                // Run ML detection
-                const detections = await mlDetectorRef.current.detect(imageData, 0.5);
-                log('SCAN', 'ML detections', detections.length);
+                    await waitForModel;
+                }
 
-                if (detections.length > 0) {
-                    // For each detection, try to decode
-                    const qrCodes = [];
-                    for (const det of detections) {
-                        log('SCAN', `Processing box: x=${det.x}, y=${det.y}, w=${det.width}, h=${det.height}`);
-                        // Use full image scan - WASM handles cropping internally
-                        // Pass on to result
+                if (mlDetectorRef.current) {
+                    setStatus('Running basic scan failed, trying ML detection...');
+                    log('SCAN', 'No QR found, trying ML detection...');
+
+                    // Create ImageData from file for ML
+                    const blob = new Blob([uint8Array], { type: file.type });
+                    const bitmap = await createImageBitmap(blob);
+                    const canvas = document.createElement('canvas');
+                    canvas.width = bitmap.width;
+                    canvas.height = bitmap.height;
+                    const ctx = canvas.getContext('2d');
+                    ctx.drawImage(bitmap, 0, 0);
+                    const imageData = ctx.getImageData(0, 0, bitmap.width, bitmap.height);
+
+                    // Run ML detection
+                    const detections = await mlDetectorRef.current.detect(imageData, 0.5);
+                    log('SCAN', 'ML detections', detections.length);
+
+                    if (detections.length > 0) {
+                        // For each detection, try to decode
+                        const qrCodes = [];
+                        for (const det of detections) {
+                            log('SCAN', `Processing box: x=${det.x}, y=${det.y}, w=${det.width}, h=${det.height}`);
+                            // Use full image scan - WASM handles cropping internally
+                            // Pass on to result
+                        }
+
+                        // Re-scan with WASM (it may work better now that we know there's a QR)
+                        result = scanner.scanImage(uint8Array);
                     }
+                }
 
-                    // Re-scan with WASM (it may work better now that we know there's a QR)
-                    result = scanner.scanImage(uint8Array);
+                const scanTime = performance.now() - startTime;
+                log('SCAN', `Total scan time: ${scanTime.toFixed(0)}ms`);
+
+                if (result?.qr_codes && result.qr_codes.length > 0) {
+                    setResults(result.qr_codes);
+                    setStatus(`Found ${result.qr_codes.length} QR code(s) in ${scanTime.toFixed(0)}ms`);
+                } else {
+                    setResults([]);
+                    setStatus(`No QR codes found (${scanTime.toFixed(0)}ms)`);
+                }
+            } catch (error) {
+                log('UPLOAD', 'ERROR caught', {
+                    name: error.name,
+                    message: error.message,
+                    stack: error.stack?.substring(0, 500)
+                });
+                setStatus('Error: ' + error.message);
+            }
+        };
+
+        const handleBatchUpload = async (event) => {
+            const files = Array.from(event.target.files);
+            if (!files.length || !scanner) return;
+
+            setBatchResults([]);
+            setStatus(`Processing ${files.length} files...`);
+
+            const results = [];
+            let success = 0;
+
+            for (const file of files) {
+                try {
+                    const arrayBuffer = await file.arrayBuffer();
+                    const uint8Array = new Uint8Array(arrayBuffer);
+                    const start = performance.now();
+                    const result = scanner.scanImage(uint8Array);
+                    const time = performance.now() - start;
+
+                    const hasQr = result?.qr_codes?.length > 0;
+                    if (hasQr) success++;
+
+                    results.push({
+                        name: file.name,
+                        status: hasQr ? '✅ Found' : '❌ No QR',
+                        content: hasQr ? result.qr_codes[0].content : '-',
+                        time: Math.round(time)
+                    });
+
+                    // Update periodically
+                    setBatchResults([...results]);
+                } catch (e) {
+                    results.push({ name: file.name, status: '⚠️ Error', content: e.message, time: 0 });
+                    setBatchResults([...results]);
                 }
             }
 
-            const scanTime = performance.now() - startTime;
-            log('SCAN', `Total scan time: ${scanTime.toFixed(0)}ms`);
+            setStatus(`Done. Success: ${success}/${files.length} (${Math.round(success / files.length * 100)}%)`);
+        };
 
-            if (result?.qr_codes && result.qr_codes.length > 0) {
-                setResults(result.qr_codes);
-                setStatus(`Found ${result.qr_codes.length} QR code(s) in ${scanTime.toFixed(0)}ms`);
-            } else {
-                setResults([]);
-                setStatus(`No QR codes found (${scanTime.toFixed(0)}ms)`);
-            }
-        } catch (error) {
-            log('UPLOAD', 'ERROR caught', {
-                name: error.name,
-                message: error.message,
-                stack: error.stack?.substring(0, 500)
-            });
-            setStatus('Error: ' + error.message);
-        }
-    };
+        const downloadLogs = () => {
+            const text = JSON.stringify(window.__QR_DEBUG_LOGS || [], null, 2);
+            const blob = new Blob([text], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'qr-scanner-logs.json';
+            a.click();
+            URL.revokeObjectURL(url);
+        };
 
-    const handleBatchUpload = async (event) => {
-        const files = Array.from(event.target.files);
-        if (!files.length || !scanner) return;
+        useEffect(() => {
+            log('INIT', 'Starting WASM load');
+            loadWasm();
+            return () => stopCamera();
+        }, []);
 
-        setBatchResults([]);
-        setStatus(`Processing ${files.length} files...`);
+        return (
+            <>
+                <Head>
+                    <title>QR Scanner</title>
+                    <meta name="viewport" content="width=device-width, initial-scale=1" />
+                </Head>
 
-        const results = [];
-        let success = 0;
+                <main className="container">
+                    <h1>📱 QR Scanner</h1>
+                    <p className="subtitle">WASM-powered QR code recognition</p>
 
-        for (const file of files) {
-            try {
-                const arrayBuffer = await file.arrayBuffer();
-                const uint8Array = new Uint8Array(arrayBuffer);
-                const start = performance.now();
-                const result = scanner.scanImage(uint8Array);
-                const time = performance.now() - start;
-
-                const hasQr = result?.qr_codes?.length > 0;
-                if (hasQr) success++;
-
-                results.push({
-                    name: file.name,
-                    status: hasQr ? '✅ Found' : '❌ No QR',
-                    content: hasQr ? result.qr_codes[0].content : '-',
-                    time: Math.round(time)
-                });
-
-                // Update periodically
-                setBatchResults([...results]);
-            } catch (e) {
-                results.push({ name: file.name, status: '⚠️ Error', content: e.message, time: 0 });
-                setBatchResults([...results]);
-            }
-        }
-
-        setStatus(`Done. Success: ${success}/${files.length} (${Math.round(success / files.length * 100)}%)`);
-    };
-
-    const downloadLogs = () => {
-        const text = JSON.stringify(window.__QR_DEBUG_LOGS || [], null, 2);
-        const blob = new Blob([text], { type: 'application/json' });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = 'qr-scanner-logs.json';
-        a.click();
-        URL.revokeObjectURL(url);
-    };
-
-    useEffect(() => {
-        log('INIT', 'Starting WASM load');
-        loadWasm();
-        return () => stopCamera();
-    }, []);
-
-    return (
-        <>
-            <Head>
-                <title>QR Scanner</title>
-                <meta name="viewport" content="width=device-width, initial-scale=1" />
-            </Head>
-
-            <main className="container">
-                <h1>📱 QR Scanner</h1>
-                <p className="subtitle">WASM-powered QR code recognition</p>
-
-                <div className="mode-toggle">
-                    <button className={mode === 'camera' ? 'active' : ''} onClick={() => { setMode('camera'); stopCamera(); }}>
-                        📷 Camera
-                    </button>
-                    <button className={mode === 'upload' ? 'active' : ''} onClick={() => { setMode('upload'); stopCamera(); }}>
-                        📁 Upload
-                    </button>
-                    <button className={mode === 'batch' ? 'active' : ''} onClick={() => { setMode('batch'); stopCamera(); }}>
-                        📚 Batch Test
-                    </button>
-                </div>
-
-                {mode === 'camera' && (
-                    <div className="camera-section">
-                        <video ref={videoRef} autoPlay playsInline muted />
-                        <canvas ref={canvasRef} style={{ display: 'none' }} />
-                        <div className="controls">
-                            {!scanning ? (
-                                <button onClick={startCamera} disabled={!wasmReady} className="btn-primary">Start Camera</button>
-                            ) : (
-                                <button onClick={stopCamera} className="btn-secondary">Stop Camera</button>
-                            )}
-                        </div>
+                    <div className="mode-toggle">
+                        <button className={mode === 'camera' ? 'active' : ''} onClick={() => { setMode('camera'); stopCamera(); }}>
+                            📷 Camera
+                        </button>
+                        <button className={mode === 'upload' ? 'active' : ''} onClick={() => { setMode('upload'); stopCamera(); }}>
+                            📁 Upload
+                        </button>
+                        <button className={mode === 'batch' ? 'active' : ''} onClick={() => { setMode('batch'); stopCamera(); }}>
+                            📚 Batch Test
+                        </button>
                     </div>
-                )}
 
-                {mode === 'upload' && (
-                    <div className="upload-section">
-                        <label className="dropzone">
-                            <input type="file" accept="image/*" onChange={handleFileUpload} disabled={!wasmReady} />
-                            <span>📷 Click or drop SINGLE image here</span>
-                        </label>
-                    </div>
-                )}
-
-                {mode === 'batch' && (
-                    <div className="batch-section">
-                        <label className="dropzone">
-                            <input type="file" accept="image/*" multiple onChange={handleBatchUpload} disabled={!wasmReady} />
-                            <span>📚 Select MULTIPLE files for Mass Test</span>
-                        </label>
-
-                        {batchResults.length > 0 && (
-                            <div className="batch-results">
-                                <table style={{ width: '100%', marginTop: '20px', borderCollapse: 'collapse' }}>
-                                    <thead>
-                                        <tr style={{ textAlign: 'left', borderBottom: '1px solid #333' }}>
-                                            <th>File</th>
-                                            <th>Status</th>
-                                            <th>Time (ms)</th>
-                                            <th>Content</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        {batchResults.map((res, i) => (
-                                            <tr key={i} style={{ borderBottom: '1px solid #222' }}>
-                                                <td>{res.name}</td>
-                                                <td>{res.status}</td>
-                                                <td>{res.time}</td>
-                                                <td style={{ maxWidth: '200px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{res.content}</td>
-                                            </tr>
-                                        ))}
-                                    </tbody>
-                                </table>
-                            </div>
-                        )}
-                    </div>
-                )}
-
-                <div className="status">
-                    Status: <strong>{status}</strong>
-                    <button onClick={downloadLogs} style={{ marginLeft: '10px', fontSize: '0.8rem', padding: '4px 8px' }}>
-                        📥 Logs
-                    </button>
-                </div>
-
-                {results.length > 0 && (
-                    <div className="results">
-                        <h3>Results</h3>
-                        {results.map((qr, idx) => (
-                            <div key={idx} className={`result-card ${qr.content_type === 'Payment' ? 'payment' : ''}`}>
-                                <div className="result-type">{qr.content_type}</div>
-                                <div className="result-content">{qr.content}</div>
-                                {qr.payment && (
-                                    <div className="payment-info">
-                                        {qr.payment.payee_name && <div>Recipient: {qr.payment.payee_name}</div>}
-                                        {qr.payment.amount && <div>Amount: {qr.payment.amount} {qr.payment.currency}</div>}
-                                    </div>
+                    {mode === 'camera' && (
+                        <div className="camera-section">
+                            <video ref={videoRef} autoPlay playsInline muted />
+                            <canvas ref={canvasRef} style={{ display: 'none' }} />
+                            <div className="controls">
+                                {!scanning ? (
+                                    <button onClick={startCamera} disabled={!wasmReady} className="btn-primary">Start Camera</button>
+                                ) : (
+                                    <button onClick={stopCamera} className="btn-secondary">Stop Camera</button>
                                 )}
                             </div>
-                        ))}
+                        </div>
+                    )}
+
+                    {mode === 'upload' && (
+                        <div className="upload-section">
+                            <label className="dropzone">
+                                <input type="file" accept="image/*" onChange={handleFileUpload} disabled={!wasmReady} />
+                                <span>📷 Click or drop SINGLE image here</span>
+                            </label>
+                        </div>
+                    )}
+
+                    {mode === 'batch' && (
+                        <div className="batch-section">
+                            <label className="dropzone">
+                                <input type="file" accept="image/*" multiple onChange={handleBatchUpload} disabled={!wasmReady} />
+                                <span>📚 Select MULTIPLE files for Mass Test</span>
+                            </label>
+
+                            {batchResults.length > 0 && (
+                                <div className="batch-results">
+                                    <table style={{ width: '100%', marginTop: '20px', borderCollapse: 'collapse' }}>
+                                        <thead>
+                                            <tr style={{ textAlign: 'left', borderBottom: '1px solid #333' }}>
+                                                <th>File</th>
+                                                <th>Status</th>
+                                                <th>Time (ms)</th>
+                                                <th>Content</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {batchResults.map((res, i) => (
+                                                <tr key={i} style={{ borderBottom: '1px solid #222' }}>
+                                                    <td>{res.name}</td>
+                                                    <td>{res.status}</td>
+                                                    <td>{res.time}</td>
+                                                    <td style={{ maxWidth: '200px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{res.content}</td>
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            )}
+                        </div>
+                    )}
+
+                    <div className="status">
+                        Status: <strong>{status}</strong>
+                        <button onClick={downloadLogs} style={{ marginLeft: '10px', fontSize: '0.8rem', padding: '4px 8px' }}>
+                            📥 Logs
+                        </button>
                     </div>
-                )}
-            </main>
-        </>
-    );
-}
+
+                    {results.length > 0 && (
+                        <div className="results">
+                            <h3>Results</h3>
+                            {results.map((qr, idx) => (
+                                <div key={idx} className={`result-card ${qr.content_type === 'Payment' ? 'payment' : ''}`}>
+                                    <div className="result-type">{qr.content_type}</div>
+                                    <div className="result-content">{qr.content}</div>
+                                    {qr.payment && (
+                                        <div className="payment-info">
+                                            {qr.payment.payee_name && <div>Recipient: {qr.payment.payee_name}</div>}
+                                            {qr.payment.amount && <div>Amount: {qr.payment.amount} {qr.payment.currency}</div>}
+                                        </div>
+                                    )}
+                                </div>
+                            ))}
+                        </div>
+                    )}
+                </main>
+            </>
+        );
+    }
