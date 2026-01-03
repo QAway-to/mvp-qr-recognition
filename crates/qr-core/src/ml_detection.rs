@@ -61,13 +61,14 @@ impl OnnxDetector {
         )?;
 
         // 2. Inference
+        log::info!("OnnxDetector: Run model...");
         let tensor = Tensor::from(input_tensor);
         let result = self.model.run(tvec!(tensor.into()))?;
         
         // 3. Postprocessing
-        // Output shape: (1, 4+nc, 8400) -> (1, 5, 8400) for 1 class
         let output = result[0].to_array_view::<f32>()?;
         let shape = output.shape(); // [1, nc+4, 8400]
+        log::info!("OnnxDetector: Output shape: {:?}", shape);
         
         if shape.len() != 3 {
              return Ok(vec![]);
@@ -94,13 +95,11 @@ impl OnnxDetector {
             }
 
             if max_score > conf_threshold {
-                // Get box: cx, cy, w, h
                 let cx = output[[0, 0, i]];
                 let cy = output[[0, 1, i]];
                 let w = output[[0, 2, i]];
                 let h = output[[0, 3, i]];
                 
-                // Convert to x1, y1, x2, y2
                 let x1 = cx - w / 2.0;
                 let y1 = cy - h / 2.0;
                 let x2 = cx + w / 2.0;
@@ -110,24 +109,27 @@ impl OnnxDetector {
             }
         }
         
+        log::info!("OnnxDetector: Raw detections > {}: {}", conf_threshold, detections.len());
+
         // NMS
         let kept_boxes = nms(&detections, 0.45);
+        log::info!("OnnxDetector: After NMS: {}", kept_boxes.len());
         
         // Map back to original image
         let mut qr_results = Vec::new();
         let scale_x = orig_w as f32 / MODEL_SIZE as f32;
         let scale_y = orig_h as f32 / MODEL_SIZE as f32;
 
-        for bbox in kept_boxes {
-            // Only class 0 usually implies QR if single class
-            // Map coords
+        for (i, bbox) in kept_boxes.iter().enumerate() {
+            log::info!("Processing Box #{}: Score={:.2}", i, bbox.score);
+            
             let x = (bbox.x1 * scale_x).max(0.0) as u32;
             let y = (bbox.y1 * scale_y).max(0.0) as u32;
             let width = ((bbox.x2 - bbox.x1) * scale_x).max(1.0) as u32;
             let height = ((bbox.y2 - bbox.y1) * scale_y).max(1.0) as u32;
             
-            // Check bounds
             if x + width > orig_w || y + height > orig_h {
+                log::warn!("Box out of bounds: x={}, y={}, w={}, h={}, orig_w={}, orig_h={}", x, y, width, height, orig_w, orig_h);
                 continue;
             }
 
@@ -140,15 +142,12 @@ impl OnnxDetector {
                 (x, y + height)
             ];
 
-            // "Best Practice": Refine corners and warp perspective
-            // We create a temporary processor for this
             let processor = ImageProcessor::new(ProcessingConfig::default());
             
             if let Some(corners) = processor.find_corners(&crop) {
-                // Determine output size (e.g. max side length of the quad)
-                 let side_len = width.max(height); // Simple heuristic
+                 log::info!("Corners found for Box #{}. Refine & Warp...", i);
+                 let side_len = width.max(height); 
                  
-                 // Target is a square
                  let dst = [
                      nalgebra::Point2::new(0.0, 0.0),
                      nalgebra::Point2::new(side_len as f32, 0.0),
@@ -157,26 +156,24 @@ impl OnnxDetector {
                  ];
                  
                  if let Some(h) = geometry::find_homography(corners, dst) {
+                     log::info!("Homography calculated. Warping...");
                      let warped = geometry::warp_perspective(&crop, &h, side_len, side_len);
                      crop = warped;
                      
-                     // Update corners to be relative to the warped image?
-                     // Actually DetectedQR.corners usually refers to location in *original* image.
-                     // Mapping the refined corners back to original image is non-trivial if we only have relative corners.
-                     // corners found are relative to `crop`.
-                     // crop offset is (x, y).
-                     
-                     // Let's update corners_abs to reflect the refined corners in original image
+                     // Update corners display (approximate)
                      let offset_x = x as f32;
                      let offset_y = y as f32;
-                     
                      corners_abs = [
                          ((corners[0].x + offset_x) as u32, (corners[0].y + offset_y) as u32),
                          ((corners[1].x + offset_x) as u32, (corners[1].y + offset_y) as u32),
                          ((corners[2].x + offset_x) as u32, (corners[2].y + offset_y) as u32),
                          ((corners[3].x + offset_x) as u32, (corners[3].y + offset_y) as u32),
                      ];
+                 } else {
+                     log::warn!("Homography calculation failed");
                  }
+            } else {
+                log::info!("No precise corners found in crop. Using full bbox crop.");
             }
 
             qr_results.push(DetectedQR {
