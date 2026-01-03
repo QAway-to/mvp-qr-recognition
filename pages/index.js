@@ -180,28 +180,24 @@ export default function Home() {
         }
     };
 
-    const handleFileUpload = async (event) => {
-        const file = event.target.files[0];
-        if (!file || !scanner) return;
-        log('UPLOAD', 'File', { name: file.name, size: file.size, type: file.type });
-        setStatus('Processing...');
+    // Unified processing logic for both single and batch uploads
+    const processImageWithFallback = async (file) => {
+        if (!scanner) throw new Error('Scanner not initialized');
 
-        try {
-            const arrayBuffer = await file.arrayBuffer();
-            const uint8Array = new Uint8Array(arrayBuffer);
-            const startTime = performance.now();
+        const arrayBuffer = await file.arrayBuffer();
+        const uint8Array = new Uint8Array(arrayBuffer);
+        const startTime = performance.now();
 
-            // Step 1: Try fast algorithmic decoding (WASM)
-            log('SCAN', 'Trying fast algorithmic scan...');
-            let result = scanner.scanImage(uint8Array);
+        // 1. First pass: Standard algorithmic scan
+        let result = scanner.scanImage(uint8Array);
 
-            // Step 2: If no QR found AND ML is available, use ML detection
-            if ((!result?.qr_codes || result.qr_codes.length === 0)) {
-                if (!mlDetectorRef.current && ENABLE_ML_DETECTION && !mlLoaded) {
-                    setStatus('Waiting for ML model to load...');
+        // 2. Fallback: If no QR found, try ML detection + Cropping
+        if ((!result?.qr_codes || result.qr_codes.length === 0)) {
+            // Check if we should use ML
+            if (ENABLE_ML_DETECTION) {
+                // If model is needed but not loaded, wait for it
+                if (!mlDetectorRef.current && !mlLoaded) {
                     log('SCAN', 'Waiting for ML model to load...');
-
-                    // Wait for model to load (max 10 seconds)
                     const waitForModel = new Promise((resolve) => {
                         const checkInterval = setInterval(() => {
                             if (mlDetectorRef.current) {
@@ -219,53 +215,91 @@ export default function Home() {
                 }
 
                 if (mlDetectorRef.current) {
-                    setStatus('Running basic scan failed, trying ML detection...');
-                    log('SCAN', 'No QR found, trying ML detection...');
+                    log('SCAN', 'ML Fallback: Running detection...');
 
-                    // Create ImageData from file for ML
-                    const blob = new Blob([uint8Array], { type: file.type });
-                    const bitmap = await createImageBitmap(blob);
-                    const canvas = document.createElement('canvas');
-                    canvas.width = bitmap.width;
-                    canvas.height = bitmap.height;
-                    const ctx = canvas.getContext('2d');
-                    ctx.drawImage(bitmap, 0, 0);
-                    const imageData = ctx.getImageData(0, 0, bitmap.width, bitmap.height);
+                    try {
+                        const blob = new Blob([uint8Array], { type: file.type });
+                        const bitmap = await createImageBitmap(blob);
 
-                    // Run ML detection
-                    const detections = await mlDetectorRef.current.detect(imageData, 0.5);
-                    log('SCAN', 'ML detections', detections.length);
+                        // Prepare canvas for ML input
+                        const canvas = document.createElement('canvas');
+                        canvas.width = bitmap.width;
+                        canvas.height = bitmap.height;
+                        const ctx = canvas.getContext('2d');
+                        ctx.drawImage(bitmap, 0, 0);
+                        const imageData = ctx.getImageData(0, 0, bitmap.width, bitmap.height);
 
-                    if (detections.length > 0) {
-                        // For each detection, try to decode
-                        const qrCodes = [];
-                        for (const det of detections) {
-                            log('SCAN', `Processing box: x=${det.x}, y=${det.y}, w=${det.width}, h=${det.height}`);
-                            // Use full image scan - WASM handles cropping internally
-                            // Pass on to result
+                        // Run detection
+                        const detections = await mlDetectorRef.current.detect(imageData, 0.5);
+
+                        if (detections.length > 0) {
+                            log('SCAN', `ML found ${detections.length} candidate regions`);
+
+                            // For each detection, crop and re-scan
+                            for (const det of detections) {
+                                // Add padding (10%)
+                                const padding = Math.max(det.width, det.height) * 0.1;
+                                const x = Math.max(0, det.x - padding);
+                                const y = Math.max(0, det.y - padding);
+                                const w = Math.min(bitmap.width - x, det.width + padding * 2);
+                                const h = Math.min(bitmap.height - y, det.height + padding * 2);
+
+                                log('SCAN', `Re-scanning crop: ${x | 0},${y | 0} ${w | 0}x${h | 0}`);
+
+                                const cropCanvas = document.createElement('canvas');
+                                cropCanvas.width = w;
+                                cropCanvas.height = h;
+                                const cropCtx = cropCanvas.getContext('2d');
+                                cropCtx.drawImage(canvas, x, y, w, h, 0, 0, w, h);
+                                const cropData = cropCtx.getImageData(0, 0, w, h);
+
+                                // Scan the cropped region
+                                const cropResult = scanner.scanImageData(cropData.data, w, h);
+
+                                if (cropResult?.qr_codes?.length > 0) {
+                                    log('SCAN', '✅ Success in cropped region!');
+                                    result = cropResult;
+                                    break; // Found one, good enough for now
+                                }
+                            }
                         }
-
-                        // Re-scan with WASM (it may work better now that we know there's a QR)
-                        result = scanner.scanImage(uint8Array);
+                    } catch (e) {
+                        log('SCAN', 'ML processing error', e.message);
                     }
                 }
             }
+        }
 
-            const scanTime = performance.now() - startTime;
-            log('SCAN', `Total scan time: ${scanTime.toFixed(0)}ms`);
+        return {
+            result,
+            time: performance.now() - startTime
+        };
+    };
+
+    const handleFileUpload = async (event) => {
+        const file = event.target.files[0];
+        if (!file || !scanner) return;
+
+        log('UPLOAD', 'File', { name: file.name, size: file.size, type: file.type });
+        setStatus('Processing...');
+        setResults([]);
+
+        try {
+            const { result, time } = await processImageWithFallback(file);
+
+            log('SCAN', `Total scan time: ${time.toFixed(0)}ms`);
 
             if (result?.qr_codes && result.qr_codes.length > 0) {
                 setResults(result.qr_codes);
-                setStatus(`Found ${result.qr_codes.length} QR code(s) in ${scanTime.toFixed(0)}ms`);
+                setStatus(`Found ${result.qr_codes.length} QR code(s) in ${time.toFixed(0)}ms`);
             } else {
                 setResults([]);
-                setStatus(`No QR codes found (${scanTime.toFixed(0)}ms)`);
+                setStatus(`No QR codes found (${time.toFixed(0)}ms)`);
             }
         } catch (error) {
             log('UPLOAD', 'ERROR caught', {
                 name: error.name,
-                message: error.message,
-                stack: error.stack?.substring(0, 500)
+                message: error.message
             });
             setStatus('Error: ' + error.message);
         }
@@ -278,16 +312,18 @@ export default function Home() {
         setBatchResults([]);
         setStatus(`Processing ${files.length} files...`);
 
+        // If ML is enabled but not ready, warn/wait once
+        if (ENABLE_ML_DETECTION && !mlDetectorRef.current && !mlLoaded) {
+            setStatus('Waiting for ML model to load before batch...');
+        }
+
         const results = [];
         let success = 0;
 
         for (const file of files) {
             try {
-                const arrayBuffer = await file.arrayBuffer();
-                const uint8Array = new Uint8Array(arrayBuffer);
-                const start = performance.now();
-                const result = scanner.scanImage(uint8Array);
-                const time = performance.now() - start;
+                // Use the same robust logic for batch
+                const { result, time } = await processImageWithFallback(file);
 
                 const hasQr = result?.qr_codes?.length > 0;
                 if (hasQr) success++;
