@@ -2,41 +2,116 @@ import { useState, useRef, useEffect, useCallback } from 'react';
 import Head from 'next/head';
 import Script from 'next/script';
 
+// Global logs array accessible from /api/logs
+if (typeof window !== 'undefined') {
+    window.__QR_DEBUG_LOGS = window.__QR_DEBUG_LOGS || [];
+}
+
+function debugLog(category, message, data = null) {
+    const timestamp = new Date().toISOString();
+    const logEntry = { timestamp, category, message, data: data ? JSON.stringify(data) : null };
+
+    console.log(`[${timestamp}] [${category}] ${message}`, data || '');
+
+    if (typeof window !== 'undefined') {
+        window.__QR_DEBUG_LOGS.push(logEntry);
+        // Keep only last 100 logs
+        if (window.__QR_DEBUG_LOGS.length > 100) {
+            window.__QR_DEBUG_LOGS.shift();
+        }
+    }
+}
+
 export default function Home() {
     const [scanner, setScanner] = useState(null);
     const [wasmReady, setWasmReady] = useState(false);
     const [results, setResults] = useState([]);
     const [status, setStatus] = useState('Loading WASM...');
-    const [mode, setMode] = useState('upload'); // 'camera' or 'upload'
+    const [mode, setMode] = useState('upload');
     const [scanning, setScanning] = useState(false);
+    const [scriptLoaded, setScriptLoaded] = useState(false);
 
     const videoRef = useRef(null);
     const canvasRef = useRef(null);
     const streamRef = useRef(null);
     const intervalRef = useRef(null);
 
-    // Initialize WASM after script loads
-    const initWasm = async () => {
-        try {
-            // wasm_bindgen is exposed globally by the script
-            if (typeof window !== 'undefined' && window.wasm_bindgen) {
-                await window.wasm_bindgen('/pkg/qr_wasm_bg.wasm');
-                const scannerInstance = new window.wasm_bindgen.WasmQRScanner();
-                setScanner(scannerInstance);
-                setWasmReady(true);
-                setStatus('Ready');
-            }
-        } catch (error) {
-            console.error('WASM init error:', error);
-            setStatus('Error: ' + error.message);
-        }
-    };
-
     useEffect(() => {
+        debugLog('INIT', 'Component mounted');
+        debugLog('INIT', 'Window object', {
+            hasWindow: typeof window !== 'undefined',
+            hasWasmBindgen: typeof window !== 'undefined' && !!window.wasm_bindgen
+        });
+
         return () => {
             stopCamera();
         };
     }, []);
+
+    // Initialize WASM after script loads
+    const initWasm = async () => {
+        debugLog('WASM', 'Script onLoad triggered');
+        debugLog('WASM', 'Checking wasm_bindgen availability', {
+            hasWasmBindgen: typeof window !== 'undefined' && !!window.wasm_bindgen,
+            wasmBindgenType: typeof window !== 'undefined' ? typeof window.wasm_bindgen : 'N/A'
+        });
+
+        try {
+            if (typeof window !== 'undefined' && window.wasm_bindgen) {
+                debugLog('WASM', 'wasm_bindgen found, initializing...');
+
+                const wasmUrl = '/pkg/qr_wasm_bg.wasm';
+                debugLog('WASM', 'Fetching WASM from URL', { url: wasmUrl });
+
+                await window.wasm_bindgen(wasmUrl);
+                debugLog('WASM', 'wasm_bindgen() completed successfully');
+
+                debugLog('WASM', 'Available exports', {
+                    keys: Object.keys(window.wasm_bindgen)
+                });
+
+                if (window.wasm_bindgen.WasmQRScanner) {
+                    debugLog('WASM', 'Creating WasmQRScanner instance');
+                    const scannerInstance = new window.wasm_bindgen.WasmQRScanner();
+                    debugLog('WASM', 'Scanner instance created', { scanner: !!scannerInstance });
+
+                    setScanner(scannerInstance);
+                    setWasmReady(true);
+                    setStatus('Ready');
+                    debugLog('WASM', 'Initialization complete - Ready');
+                } else {
+                    debugLog('WASM', 'ERROR: WasmQRScanner not found in exports');
+                    setStatus('Error: WasmQRScanner not found');
+                }
+            } else {
+                debugLog('WASM', 'ERROR: wasm_bindgen not available on window');
+                setStatus('Error: wasm_bindgen not loaded');
+            }
+        } catch (error) {
+            debugLog('WASM', 'ERROR during initialization', {
+                name: error.name,
+                message: error.message,
+                stack: error.stack
+            });
+            setStatus('Error: ' + error.message);
+        }
+    };
+
+    const onScriptLoad = () => {
+        debugLog('SCRIPT', 'Script element loaded');
+        setScriptLoaded(true);
+
+        // Small delay to ensure script is fully executed
+        setTimeout(() => {
+            debugLog('SCRIPT', 'Calling initWasm after delay');
+            initWasm();
+        }, 100);
+    };
+
+    const onScriptError = (e) => {
+        debugLog('SCRIPT', 'Script loading ERROR', { error: e?.toString() });
+        setStatus('Failed to load WASM script');
+    };
 
     const stopCamera = useCallback(() => {
         if (intervalRef.current) {
@@ -52,6 +127,7 @@ export default function Home() {
 
     const startCamera = async () => {
         try {
+            debugLog('CAMERA', 'Starting camera...');
             setStatus('Starting camera...');
             const stream = await navigator.mediaDevices.getUserMedia({
                 video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } }
@@ -67,6 +143,7 @@ export default function Home() {
                 };
             }
         } catch (error) {
+            debugLog('CAMERA', 'ERROR', { message: error.message });
             setStatus('Camera error: ' + error.message);
         }
     };
@@ -99,12 +176,16 @@ export default function Home() {
         const file = event.target.files[0];
         if (!file || !scanner) return;
 
+        debugLog('UPLOAD', 'File selected', { name: file.name, size: file.size, type: file.type });
         setStatus('Processing...');
 
         try {
             const arrayBuffer = await file.arrayBuffer();
             const uint8Array = new Uint8Array(arrayBuffer);
+            debugLog('UPLOAD', 'Calling scanner.scanImage', { byteLength: uint8Array.length });
+
             const result = scanner.scanImage(uint8Array);
+            debugLog('UPLOAD', 'Scan result', result);
 
             if (result && result.qr_codes) {
                 setResults(result.qr_codes);
@@ -114,6 +195,7 @@ export default function Home() {
                 setStatus('No QR codes found');
             }
         } catch (error) {
+            debugLog('UPLOAD', 'ERROR', { message: error.message, stack: error.stack });
             setStatus('Error: ' + error.message);
         }
     };
@@ -130,8 +212,8 @@ export default function Home() {
             <Script
                 src="/pkg/qr_wasm.js"
                 strategy="afterInteractive"
-                onLoad={initWasm}
-                onError={(e) => setStatus('Failed to load WASM script')}
+                onLoad={onScriptLoad}
+                onError={onScriptError}
             />
 
             <main className="container">
