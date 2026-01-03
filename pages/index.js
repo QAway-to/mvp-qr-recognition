@@ -33,6 +33,11 @@ function log(cat, msg, data = null) {
 }
 
 export default function Home() {
+    // ===== ML DETECTION TOGGLE =====
+    // Set to true to enable ML-based QR detection (slower but handles difficult QRs)
+    // Set to false to use only algorithmic detection (fast, stable)
+    const ENABLE_ML_DETECTION = false;
+
     const [scanner, setScanner] = useState(null);
     const [wasmReady, setWasmReady] = useState(false);
     const [results, setResults] = useState([]);
@@ -90,21 +95,25 @@ export default function Home() {
                 setStatus('Ready');
                 log('WASM', 'Ready!');
 
-                // Try to load ML model
-                try {
-                    log('ML', 'Fetching model.onnx...');
-                    const modelResp = await fetch('/model.onnx');
-                    if (modelResp.ok) {
-                        const modelBuf = await modelResp.arrayBuffer();
-                        const modelBytes = new Uint8Array(modelBuf);
-                        scannerInstance.loadModel(modelBytes);
-                        setMlLoaded(true);
-                        log('ML', 'Model loaded successfully (YOLOv8)');
-                    } else {
-                        log('ML', 'Model not found (using Fallback)');
+                // Try to load ML model (only if enabled)
+                if (ENABLE_ML_DETECTION) {
+                    try {
+                        log('ML', 'Fetching model.onnx...');
+                        const modelResp = await fetch('/model.onnx');
+                        if (modelResp.ok) {
+                            const modelBuf = await modelResp.arrayBuffer();
+                            const modelBytes = new Uint8Array(modelBuf);
+                            scannerInstance.loadModel(modelBytes);
+                            setMlLoaded(true);
+                            log('ML', 'Model loaded successfully (YOLOv8)');
+                        } else {
+                            log('ML', 'Model not found (using Fallback)');
+                        }
+                    } catch (e) {
+                        log('ML', 'Failed to load model', e);
                     }
-                } catch (e) {
-                    log('ML', 'Failed to load model', e);
+                } else {
+                    log('ML', 'ML detection disabled (ENABLE_ML_DETECTION = false)');
                 }
             } else {
                 log('WASM', 'ERROR: No WasmQRScanner in exports');
