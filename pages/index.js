@@ -283,13 +283,44 @@ export default function Home() {
 
                                         const rotData = rotCtx.getImageData(0, 0, nw, nh);
 
-                                        // DEBUG: Check center pixel to verify drawing
+                                        // DEBUG: Check center pixel
                                         const cx = Math.floor(nw / 2);
                                         const cy = Math.floor(nh / 2);
                                         const pIdx = (cy * nw + cx) * 4;
                                         log('SCAN', `Rotated center pixel: rgba(${rotData.data[pIdx]},${rotData.data[pIdx + 1]},${rotData.data[pIdx + 2]},${rotData.data[pIdx + 3]})`);
 
-                                        const rotResult = scanner.scanImageData(rotData.data, nw, nh);
+                                        // Attempt 1: Scan normal rotated
+                                        let rotResult = scanner.scanImageData(rotData.data, nw, nh);
+                                        if (rotResult?.qr_codes?.length > 0) {
+                                            log('SCAN', `✅ Success with ${angle}° rotation (normal)!`);
+                                            cropResult = rotResult;
+                                            break;
+                                        }
+
+                                        // Attempt 2: High-contrast binarization
+                                        // Many scanners fail on gray/aliased edges from rotation.
+                                        // Let's force black/white.
+                                        const pixels = rotData.data;
+                                        for (let i = 0; i < pixels.length; i += 4) {
+                                            // Simple grayscale
+                                            const gray = (pixels[i] + pixels[i + 1] + pixels[i + 2]) / 3;
+                                            // Threshold (128 is standard, could adjust)
+                                            const val = gray < 128 ? 0 : 255;
+                                            pixels[i] = pixels[i + 1] = pixels[i + 2] = val;
+                                            // Keep alpha
+                                        }
+
+                                        rotResult = scanner.scanImageData(pixels, nw, nh);
+                                        if (rotResult?.qr_codes?.length > 0) {
+                                            log('SCAN', `✅ Success with ${angle}° rotation (binarized)!`);
+                                            cropResult = rotResult;
+                                            break;
+                                        }
+
+                                        // Continue loop if failed...
+                                        if (!rotResult?.qr_codes?.length) {
+                                            log('SCAN', `❌ Failed with ${angle}° rotation`);
+                                        }
 
                                         if (rotResult?.qr_codes?.length > 0) {
                                             log('SCAN', `✅ Success with ${angle}° rotation!`);
