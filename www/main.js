@@ -1,6 +1,6 @@
 // QR Scanner Demo - Main JavaScript
 
-import init, { WasmQRScanner, quickScan, version } from '../pkg/qr_wasm.js';
+import init, { WasmQRScanner, quickScan, version } from './pkg/qr_wasm.js';
 
 let scanner = null;
 let videoStream = null;
