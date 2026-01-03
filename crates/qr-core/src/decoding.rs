@@ -68,13 +68,13 @@ impl QRDecoder {
     
     /// Декодирование QR-кода
     pub fn decode(&self, img: &GrayImage) -> Result<DecodedQR, DecodeError> {
-        // Пробуем rxing сначала
-        if let Ok(result) = self.decode_with_rxing(img) {
+        // Пробуем rqrr сначала (более стабилен для WASM)
+        if let Ok(result) = self.decode_with_rqrr(img) {
             return Ok(result);
         }
-        
-        // Пробуем rqrr
-        if let Ok(result) = self.decode_with_rqrr(img) {
+
+        // Пробуем rxing (может паниковать из-за таймеров в WASM, поэтому второй)
+        if let Ok(result) = self.decode_with_rxing(img) {
             return Ok(result);
         }
         
@@ -123,10 +123,11 @@ impl QRDecoder {
                 BarcodeFormat::QR_CODE,
             ])),
         );
-        hints.insert(
-            rxing::DecodeHintType::TRY_HARDER,
-            rxing::DecodeHintValue::TryHarder(true),
-        );
+        // TryHarder может использовать таймеры, что вызывает панику в WASM без поддержки времени
+        // hints.insert(
+        //     rxing::DecodeHintType::TRY_HARDER,
+        //     rxing::DecodeHintValue::TryHarder(true),
+        // );
         
         let mut reader = MultiFormatReader::default();
         
