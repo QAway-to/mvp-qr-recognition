@@ -1,25 +1,12 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import Head from 'next/head';
-import Script from 'next/script';
 
-// Global logs array accessible from /api/logs
-if (typeof window !== 'undefined') {
-    window.__QR_DEBUG_LOGS = window.__QR_DEBUG_LOGS || [];
-}
-
-function debugLog(category, message, data = null) {
-    const timestamp = new Date().toISOString();
-    const logEntry = { timestamp, category, message, data: data ? JSON.stringify(data) : null };
-
-    console.log(`[${timestamp}] [${category}] ${message}`, data || '');
-
-    if (typeof window !== 'undefined') {
-        window.__QR_DEBUG_LOGS.push(logEntry);
-        // Keep only last 100 logs
-        if (window.__QR_DEBUG_LOGS.length > 100) {
-            window.__QR_DEBUG_LOGS.shift();
-        }
-    }
+// Debug logs
+const logs = [];
+function log(cat, msg, data = null) {
+    const entry = { t: new Date().toISOString(), cat, msg, data };
+    logs.push(entry);
+    console.log(`[${cat}] ${msg}`, data || '');
 }
 
 export default function Home() {
@@ -29,7 +16,6 @@ export default function Home() {
     const [status, setStatus] = useState('Loading WASM...');
     const [mode, setMode] = useState('upload');
     const [scanning, setScanning] = useState(false);
-    const [scriptLoaded, setScriptLoaded] = useState(false);
 
     const videoRef = useRef(null);
     const canvasRef = useRef(null);
@@ -37,80 +23,74 @@ export default function Home() {
     const intervalRef = useRef(null);
 
     useEffect(() => {
-        debugLog('INIT', 'Component mounted');
-        debugLog('INIT', 'Window object', {
-            hasWindow: typeof window !== 'undefined',
-            hasWasmBindgen: typeof window !== 'undefined' && !!window.wasm_bindgen
-        });
-
-        return () => {
-            stopCamera();
-        };
+        log('INIT', 'Starting WASM load');
+        loadWasm();
+        return () => stopCamera();
     }, []);
 
-    // Initialize WASM after script loads
-    const initWasm = async () => {
-        debugLog('WASM', 'Script onLoad triggered');
-        debugLog('WASM', 'Checking wasm_bindgen availability', {
-            hasWasmBindgen: typeof window !== 'undefined' && !!window.wasm_bindgen,
-            wasmBindgenType: typeof window !== 'undefined' ? typeof window.wasm_bindgen : 'N/A'
-        });
-
+    const loadWasm = async () => {
         try {
-            if (typeof window !== 'undefined' && window.wasm_bindgen) {
-                debugLog('WASM', 'wasm_bindgen found, initializing...');
+            log('WASM', 'Dynamic import starting');
 
-                const wasmUrl = '/pkg/qr_wasm_bg.wasm';
-                debugLog('WASM', 'Fetching WASM from URL', { url: wasmUrl });
+            // Fetch the JS module as text and create a blob URL
+            const jsResponse = await fetch('/pkg/qr_wasm.js');
+            log('WASM', 'JS fetch status', jsResponse.status);
 
-                await window.wasm_bindgen(wasmUrl);
-                debugLog('WASM', 'wasm_bindgen() completed successfully');
-
-                debugLog('WASM', 'Available exports', {
-                    keys: Object.keys(window.wasm_bindgen)
-                });
-
-                if (window.wasm_bindgen.WasmQRScanner) {
-                    debugLog('WASM', 'Creating WasmQRScanner instance');
-                    const scannerInstance = new window.wasm_bindgen.WasmQRScanner();
-                    debugLog('WASM', 'Scanner instance created', { scanner: !!scannerInstance });
-
-                    setScanner(scannerInstance);
-                    setWasmReady(true);
-                    setStatus('Ready');
-                    debugLog('WASM', 'Initialization complete - Ready');
-                } else {
-                    debugLog('WASM', 'ERROR: WasmQRScanner not found in exports');
-                    setStatus('Error: WasmQRScanner not found');
-                }
-            } else {
-                debugLog('WASM', 'ERROR: wasm_bindgen not available on window');
-                setStatus('Error: wasm_bindgen not loaded');
+            if (!jsResponse.ok) {
+                throw new Error(`Failed to fetch JS: ${jsResponse.status}`);
             }
+
+            const jsText = await jsResponse.text();
+            log('WASM', 'JS text length', jsText.length);
+
+            // Modify the JS to use absolute URL for WASM
+            const modifiedJs = jsText.replace(
+                /input = new URL\('qr_wasm_bg\.wasm', import\.meta\.url\)/g,
+                "input = '/pkg/qr_wasm_bg.wasm'"
+            );
+
+            // Create blob and import
+            const blob = new Blob([modifiedJs], { type: 'application/javascript' });
+            const blobUrl = URL.createObjectURL(blob);
+
+            log('WASM', 'Importing from blob URL');
+            const wasmModule = await import(/* webpackIgnore: true */ blobUrl);
+            log('WASM', 'Module imported, keys:', Object.keys(wasmModule));
+
+            // Initialize
+            log('WASM', 'Calling default export (init)');
+            await wasmModule.default();
+            log('WASM', 'Init complete');
+
+            // Create scanner
+            if (wasmModule.WasmQRScanner) {
+                log('WASM', 'Creating scanner');
+                const scannerInstance = new wasmModule.WasmQRScanner();
+                setScanner(scannerInstance);
+                setWasmReady(true);
+                setStatus('Ready');
+                log('WASM', 'Ready!');
+            } else {
+                log('WASM', 'ERROR: No WasmQRScanner export');
+                setStatus('Error: WasmQRScanner not found');
+            }
+
+            URL.revokeObjectURL(blobUrl);
         } catch (error) {
-            debugLog('WASM', 'ERROR during initialization', {
-                name: error.name,
-                message: error.message,
-                stack: error.stack
-            });
+            log('WASM', 'ERROR', { name: error.name, message: error.message });
             setStatus('Error: ' + error.message);
         }
     };
 
-    const onScriptLoad = () => {
-        debugLog('SCRIPT', 'Script element loaded');
-        setScriptLoaded(true);
-
-        // Small delay to ensure script is fully executed
-        setTimeout(() => {
-            debugLog('SCRIPT', 'Calling initWasm after delay');
-            initWasm();
-        }, 100);
-    };
-
-    const onScriptError = (e) => {
-        debugLog('SCRIPT', 'Script loading ERROR', { error: e?.toString() });
-        setStatus('Failed to load WASM script');
+    const downloadLogs = () => {
+        const text = JSON.stringify(logs, null, 2);
+        const blob = new Blob([text], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'qr-scanner-logs.json';
+        a.click();
+        URL.revokeObjectURL(url);
     };
 
     const stopCamera = useCallback(() => {
@@ -127,12 +107,10 @@ export default function Home() {
 
     const startCamera = async () => {
         try {
-            debugLog('CAMERA', 'Starting camera...');
             setStatus('Starting camera...');
             const stream = await navigator.mediaDevices.getUserMedia({
                 video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } }
             });
-
             streamRef.current = stream;
             if (videoRef.current) {
                 videoRef.current.srcObject = stream;
@@ -143,59 +121,48 @@ export default function Home() {
                 };
             }
         } catch (error) {
-            debugLog('CAMERA', 'ERROR', { message: error.message });
+            log('CAMERA', 'ERROR', error.message);
             setStatus('Camera error: ' + error.message);
         }
     };
 
     const scanFrame = useCallback(() => {
         if (!scanner || !videoRef.current || !canvasRef.current) return;
-
         const video = videoRef.current;
         const canvas = canvasRef.current;
         const ctx = canvas.getContext('2d');
-
         canvas.width = video.videoWidth;
         canvas.height = video.videoHeight;
         ctx.drawImage(video, 0, 0);
-
         const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-
         try {
             const result = scanner.scanImageData(imageData.data, canvas.width, canvas.height);
-            if (result && result.qr_codes && result.qr_codes.length > 0) {
+            if (result?.qr_codes?.length > 0) {
                 setResults(result.qr_codes);
-                setStatus(`Found ${result.qr_codes.length} QR code(s) in ${result.processing_time_ms}ms`);
+                setStatus(`Found ${result.qr_codes.length} QR code(s)`);
             }
-        } catch (error) {
-            console.error('Scan error:', error);
-        }
+        } catch (e) { /* silent */ }
     }, [scanner]);
 
     const handleFileUpload = async (event) => {
         const file = event.target.files[0];
         if (!file || !scanner) return;
-
-        debugLog('UPLOAD', 'File selected', { name: file.name, size: file.size, type: file.type });
+        log('UPLOAD', 'File', { name: file.name, size: file.size });
         setStatus('Processing...');
-
         try {
             const arrayBuffer = await file.arrayBuffer();
             const uint8Array = new Uint8Array(arrayBuffer);
-            debugLog('UPLOAD', 'Calling scanner.scanImage', { byteLength: uint8Array.length });
-
             const result = scanner.scanImage(uint8Array);
-            debugLog('UPLOAD', 'Scan result', result);
-
-            if (result && result.qr_codes) {
+            log('UPLOAD', 'Result', result);
+            if (result?.qr_codes) {
                 setResults(result.qr_codes);
-                setStatus(`Found ${result.qr_codes.length} QR code(s) in ${result.processing_time_ms}ms`);
+                setStatus(`Found ${result.qr_codes.length} QR code(s)`);
             } else {
                 setResults([]);
                 setStatus('No QR codes found');
             }
         } catch (error) {
-            debugLog('UPLOAD', 'ERROR', { message: error.message, stack: error.stack });
+            log('UPLOAD', 'ERROR', error.message);
             setStatus('Error: ' + error.message);
         }
     };
@@ -204,58 +171,36 @@ export default function Home() {
         <>
             <Head>
                 <title>QR Scanner</title>
-                <meta name="description" content="QR Code Scanner with WASM" />
                 <meta name="viewport" content="width=device-width, initial-scale=1" />
             </Head>
-
-            {/* Load WASM JS file */}
-            <Script
-                src="/pkg/qr_wasm.js"
-                strategy="afterInteractive"
-                onLoad={onScriptLoad}
-                onError={onScriptError}
-            />
 
             <main className="container">
                 <h1>📱 QR Scanner</h1>
                 <p className="subtitle">WASM-powered QR code recognition</p>
 
-                {/* Mode Toggle */}
                 <div className="mode-toggle">
-                    <button
-                        className={mode === 'camera' ? 'active' : ''}
-                        onClick={() => { setMode('camera'); stopCamera(); }}
-                    >
+                    <button className={mode === 'camera' ? 'active' : ''} onClick={() => { setMode('camera'); stopCamera(); }}>
                         📷 Camera
                     </button>
-                    <button
-                        className={mode === 'upload' ? 'active' : ''}
-                        onClick={() => { setMode('upload'); stopCamera(); }}
-                    >
+                    <button className={mode === 'upload' ? 'active' : ''} onClick={() => { setMode('upload'); stopCamera(); }}>
                         📁 Upload
                     </button>
                 </div>
 
-                {/* Camera Mode */}
                 {mode === 'camera' && (
                     <div className="camera-section">
                         <video ref={videoRef} autoPlay playsInline muted />
                         <canvas ref={canvasRef} style={{ display: 'none' }} />
                         <div className="controls">
                             {!scanning ? (
-                                <button onClick={startCamera} disabled={!wasmReady} className="btn-primary">
-                                    Start Camera
-                                </button>
+                                <button onClick={startCamera} disabled={!wasmReady} className="btn-primary">Start Camera</button>
                             ) : (
-                                <button onClick={stopCamera} className="btn-secondary">
-                                    Stop Camera
-                                </button>
+                                <button onClick={stopCamera} className="btn-secondary">Stop Camera</button>
                             )}
                         </div>
                     </div>
                 )}
 
-                {/* Upload Mode */}
                 {mode === 'upload' && (
                     <div className="upload-section">
                         <label className="dropzone">
@@ -265,12 +210,13 @@ export default function Home() {
                     </div>
                 )}
 
-                {/* Status */}
                 <div className="status">
                     Status: <strong>{status}</strong>
+                    <button onClick={downloadLogs} style={{ marginLeft: '10px', fontSize: '0.8rem', padding: '4px 8px' }}>
+                        📥 Logs
+                    </button>
                 </div>
 
-                {/* Results */}
                 {results.length > 0 && (
                     <div className="results">
                         <h3>Results</h3>
