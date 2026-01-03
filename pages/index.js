@@ -92,8 +92,8 @@ export default function Home() {
 
                 // Try to load ML model
                 try {
-                    log('ML', 'Fetching yolov8n-qr.onnx...');
-                    const modelResp = await fetch('/models/yolov8n-qr.onnx');
+                    log('ML', 'Fetching model.onnx...');
+                    const modelResp = await fetch('/model.onnx');
                     if (modelResp.ok) {
                         const modelBuf = await modelResp.arrayBuffer();
                         const modelBytes = new Uint8Array(modelBuf);
