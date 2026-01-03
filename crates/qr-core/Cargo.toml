@@ -8,7 +8,7 @@ description = "Core QR code recognition library with preprocessing and decoding"
 [dependencies]
 image.workspace = true
 imageproc.workspace = true
-rxing.workspace = true
+rxing = { workspace = true, default-features = false }
 rqrr.workspace = true
 urlencoding.workspace = true
 tract-core = "0.21.7"
