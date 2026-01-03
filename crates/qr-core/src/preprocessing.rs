@@ -51,11 +51,6 @@ impl ImageProcessor {
     
     /// Полная обработка изображения
     pub fn process(&self, img: &GrayImage) -> GrayImage {
-        // TEMPORARY: Skip all processing to debug panic
-        // Return image as-is to isolate if panic is in preprocessing
-        img.clone()
-        
-        /* DISABLED FOR DEBUGGING
         let mut result = img.clone();
         
         // 1. Шумоподавление (если включено)
@@ -74,7 +69,6 @@ impl ImageProcessor {
         }
         
         result
-        */
     }
     
     /// Адаптивная бинаризация (Bradley/Otsu)
