@@ -324,7 +324,10 @@ export default function Home() {
                                         }
 
                                         // Continue loop if failed...
-                                        if (!rotResult?.qr_codes?.length) {
+                                        if (!cropResult?.qr_codes?.length && !window.debugDataUrlLogged) {
+                                            log('SCAN', `DEBUG IMAGE (Rotated ${angle}°): ${rotCanvas.toDataURL()}`);
+                                            window.debugDataUrlLogged = true; // Log only once to avoid spam
+                                        } else if (!cropResult?.qr_codes?.length) {
                                             log('SCAN', `❌ Failed with ${angle}° rotation`);
                                         }
 
