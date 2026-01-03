@@ -230,7 +230,7 @@ export default function Home() {
                         const imageData = ctx.getImageData(0, 0, bitmap.width, bitmap.height);
 
                         // Run detection
-                        const detections = await mlDetectorRef.current.detect(imageData, 0.5);
+                        const detections = await mlDetectorRef.current.detect(imageData, 0.65);
 
                         if (detections.length > 0) {
                             log('SCAN', `ML found ${detections.length} candidate regions`);
