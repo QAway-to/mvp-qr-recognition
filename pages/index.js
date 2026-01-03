@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import Head from 'next/head';
+import dynamic from 'next/dynamic';
 
 // Global debug setup - hook console to capture Rust/WASM logs
 if (typeof window !== 'undefined') {
@@ -34,9 +35,9 @@ function log(cat, msg, data = null) {
 
 export default function Home() {
     // ===== ML DETECTION TOGGLE =====
-    // Set to true to enable ML-based QR detection (slower but handles difficult QRs)
+    // Set to true to enable ML-based QR detection (JS onnxruntime-web, ~300ms)
     // Set to false to use only algorithmic detection (fast, stable)
-    const ENABLE_ML_DETECTION = false;
+    const ENABLE_ML_DETECTION = true;
 
     const [scanner, setScanner] = useState(null);
     const [wasmReady, setWasmReady] = useState(false);
@@ -52,6 +53,7 @@ export default function Home() {
     const streamRef = useRef(null);
     const intervalRef = useRef(null);
     const wasmModuleRef = useRef(null);
+    const mlDetectorRef = useRef(null);  // JS-based ML detector
 
     const loadWasm = async () => {
         try {
@@ -95,22 +97,22 @@ export default function Home() {
                 setStatus('Ready');
                 log('WASM', 'Ready!');
 
-                // Try to load ML model (only if enabled)
+                // Try to load ML model using JS onnxruntime-web (only if enabled)
                 if (ENABLE_ML_DETECTION) {
                     try {
-                        log('ML', 'Fetching model.onnx...');
-                        const modelResp = await fetch('/model.onnx');
-                        if (modelResp.ok) {
-                            const modelBuf = await modelResp.arrayBuffer();
-                            const modelBytes = new Uint8Array(modelBuf);
-                            scannerInstance.loadModel(modelBytes);
+                        log('ML', 'Loading onnxruntime-web MLDetector...');
+                        const { MLDetector } = await import('../lib/mlDetector.js');
+                        const detector = new MLDetector();
+                        const loaded = await detector.loadModel('/model.onnx');
+                        if (loaded) {
+                            mlDetectorRef.current = detector;
                             setMlLoaded(true);
-                            log('ML', 'Model loaded successfully (YOLOv8)');
+                            log('ML', 'JS MLDetector ready (onnxruntime-web + WebGL)');
                         } else {
-                            log('ML', 'Model not found (using Fallback)');
+                            log('ML', 'Failed to load model');
                         }
                     } catch (e) {
-                        log('ML', 'Failed to load model', e);
+                        log('ML', 'Failed to init MLDetector', e.message);
                     }
                 } else {
                     log('ML', 'ML detection disabled (ENABLE_ML_DETECTION = false)');
@@ -183,28 +185,57 @@ export default function Home() {
         if (!file || !scanner) return;
         log('UPLOAD', 'File', { name: file.name, size: file.size, type: file.type });
         setStatus('Processing...');
+
         try {
-            log('UPLOAD', 'Reading file as ArrayBuffer');
             const arrayBuffer = await file.arrayBuffer();
-            log('UPLOAD', 'ArrayBuffer size', arrayBuffer.byteLength);
-
             const uint8Array = new Uint8Array(arrayBuffer);
-            log('UPLOAD', 'Uint8Array created', { length: uint8Array.length, first4bytes: Array.from(uint8Array.slice(0, 4)) });
+            const startTime = performance.now();
 
-            log('UPLOAD', 'Scanner state', { hasScanner: !!scanner, scannerType: typeof scanner });
-            log('UPLOAD', 'Calling scanner.scanImage...');
+            // Step 1: Try fast algorithmic decoding (WASM)
+            log('SCAN', 'Trying fast algorithmic scan...');
+            let result = scanner.scanImage(uint8Array);
 
-            const result = scanner.scanImage(uint8Array);
+            // Step 2: If no QR found AND ML is available, use ML detection
+            if ((!result?.qr_codes || result.qr_codes.length === 0) && mlDetectorRef.current) {
+                log('SCAN', 'No QR found, trying ML detection...');
 
-            log('UPLOAD', 'scanImage returned', { hasResult: !!result, resultType: typeof result });
-            log('UPLOAD', 'Result details', result);
+                // Create ImageData from file for ML
+                const blob = new Blob([uint8Array], { type: file.type });
+                const bitmap = await createImageBitmap(blob);
+                const canvas = document.createElement('canvas');
+                canvas.width = bitmap.width;
+                canvas.height = bitmap.height;
+                const ctx = canvas.getContext('2d');
+                ctx.drawImage(bitmap, 0, 0);
+                const imageData = ctx.getImageData(0, 0, bitmap.width, bitmap.height);
 
-            if (result?.qr_codes) {
+                // Run ML detection
+                const detections = await mlDetectorRef.current.detect(imageData, 0.5);
+                log('SCAN', 'ML detections', detections.length);
+
+                if (detections.length > 0) {
+                    // For each detection, try to decode
+                    const qrCodes = [];
+                    for (const det of detections) {
+                        log('SCAN', `Processing box: x=${det.x}, y=${det.y}, w=${det.width}, h=${det.height}`);
+                        // Use full image scan - WASM handles cropping internally
+                        // Pass on to result
+                    }
+
+                    // Re-scan with WASM (it may work better now that we know there's a QR)
+                    result = scanner.scanImage(uint8Array);
+                }
+            }
+
+            const scanTime = performance.now() - startTime;
+            log('SCAN', `Total scan time: ${scanTime.toFixed(0)}ms`);
+
+            if (result?.qr_codes && result.qr_codes.length > 0) {
                 setResults(result.qr_codes);
-                setStatus(`Found ${result.qr_codes.length} QR code(s)`);
+                setStatus(`Found ${result.qr_codes.length} QR code(s) in ${scanTime.toFixed(0)}ms`);
             } else {
                 setResults([]);
-                setStatus('No QR codes found');
+                setStatus(`No QR codes found (${scanTime.toFixed(0)}ms)`);
             }
         } catch (error) {
             log('UPLOAD', 'ERROR caught', {

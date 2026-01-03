@@ -84,6 +84,11 @@ pub fn find_homography(
     // Solve using SVD
     let svd = matrix_a.svd(false, true);
     if let Some(v_t) = svd.v_t {
+         // Safety check: ensure we have enough rows
+         if v_t.nrows() < 9 {
+             return None;
+         }
+         
          // The solution is the last row of V^T (or last column of V) corresponding to smallest singular value.
          // svd.v_t is V^T. The last row correspond to smallest sigma.
          let h_vec = v_t.row(8);
