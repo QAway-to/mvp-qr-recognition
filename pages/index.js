@@ -282,6 +282,13 @@ export default function Home() {
                                         rotCtx.drawImage(cropCanvas, -w / 2, -h / 2);
 
                                         const rotData = rotCtx.getImageData(0, 0, nw, nh);
+
+                                        // DEBUG: Check center pixel to verify drawing
+                                        const cx = Math.floor(nw / 2);
+                                        const cy = Math.floor(nh / 2);
+                                        const pIdx = (cy * nw + cx) * 4;
+                                        log('SCAN', `Rotated center pixel: rgba(${rotData.data[pIdx]},${rotData.data[pIdx + 1]},${rotData.data[pIdx + 2]},${rotData.data[pIdx + 3]})`);
+
                                         const rotResult = scanner.scanImageData(rotData.data, nw, nh);
 
                                         if (rotResult?.qr_codes?.length > 0) {
