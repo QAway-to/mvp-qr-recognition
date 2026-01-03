@@ -254,7 +254,42 @@ export default function Home() {
                                 const cropData = cropCtx.getImageData(0, 0, w, h);
 
                                 // Scan the cropped region
-                                const cropResult = scanner.scanImageData(cropData.data, w, h);
+                                let cropResult = scanner.scanImageData(cropData.data, w, h);
+
+                                // ROTATION RETRY: If ML found it but scanner failed, try rotating
+                                if (!cropResult?.qr_codes?.length && w > 0 && h > 0) {
+                                    log('SCAN', 'Standard scan failed on crop, trying rotation...');
+
+                                    // Try 45 degrees
+                                    const angles = [45];
+
+                                    for (const angle of angles) {
+                                        const rad = (angle * Math.PI) / 180;
+                                        const cos = Math.abs(Math.cos(rad));
+                                        const sin = Math.abs(Math.sin(rad));
+
+                                        const nw = Math.floor(w * cos + h * sin);
+                                        const nh = Math.floor(w * sin + h * cos);
+
+                                        const rotCanvas = document.createElement('canvas');
+                                        rotCanvas.width = nw;
+                                        rotCanvas.height = nh;
+                                        const rotCtx = rotCanvas.getContext('2d');
+
+                                        rotCtx.translate(nw / 2, nh / 2);
+                                        rotCtx.rotate(rad);
+                                        rotCtx.drawImage(cropCanvas, -w / 2, -h / 2);
+
+                                        const rotData = rotCtx.getImageData(0, 0, nw, nh);
+                                        const rotResult = scanner.scanImageData(rotData.data, nw, nh);
+
+                                        if (rotResult?.qr_codes?.length > 0) {
+                                            log('SCAN', `✅ Success with ${angle}° rotation!`);
+                                            cropResult = rotResult;
+                                            break;
+                                        }
+                                    }
+                                }
 
                                 if (cropResult?.qr_codes?.length > 0) {
                                     log('SCAN', '✅ Success in cropped region!');
