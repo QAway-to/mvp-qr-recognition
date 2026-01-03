@@ -185,6 +185,124 @@ impl ImageProcessor {
             image::imageops::FilterType::Triangle,
         )
     }
+
+    /// Find corners of the QR code within the image (or ROI)
+    /// Returns 4 points [TL, TR, BR, BL] if a valid quad is found.
+    pub fn find_corners(&self, img: &GrayImage) -> Option<[nalgebra::Point2<f32>; 4]> {
+        // 1. Binary + Edges
+        // Use adaptive threshold which we already have
+        let binary = self.adaptive_threshold(img);
+        
+        // 2. Find contours
+        // imageproc::contours::find_contours returns valid contours
+        let contours = imageproc::contours::find_contours(&binary);
+        
+        // 3. Filter for large quads
+        let (width, height) = img.dimensions();
+        let min_area = (width * height) as f32 * 0.1; // At least 10% of ROI
+        
+        // We look for a contour that approximates to 4 points
+        for contour in contours {
+            // Simplify contour
+            let simplified = simplify_douglas_peucker(&contour.points, 5.0);
+            
+            if simplified.len() == 4 {
+                // Check area
+                // Polygon area formula
+                let area = polygon_area(&simplified);
+                if area > min_area && is_convex(&simplified) {
+                    // Sort points: TL, TR, BR, BL
+                    return Some(sort_corners(&simplified));
+                }
+            }
+        }
+        
+        None
+    }
+}
+
+/// Ramer-Douglas-Peucker algorithm for curve simplification
+fn simplify_douglas_peucker(points: &[imageproc::point::Point<i32>], epsilon: f32) -> Vec<imageproc::point::Point<i32>> {
+    if points.len() < 3 {
+        return points.to_vec();
+    }
+
+    let mut dmax = 0.0;
+    let mut index = 0;
+    let end = points.len() - 1;
+
+    for i in 1..end {
+        let d = perpendicular_distance(&points[i], &points[0], &points[end]);
+        if d > dmax {
+            index = i;
+            dmax = d;
+        }
+    }
+
+    if dmax > epsilon {
+        let mut results1 = simplify_douglas_peucker(&points[..=index], epsilon);
+        let results2 = simplify_douglas_peucker(&points[index..], epsilon);
+        
+        results1.pop(); // Remove duplicate point
+        results1.extend(results2);
+        results1
+    } else {
+        vec![points[0], points[end]]
+    }
+}
+
+fn perpendicular_distance(p: &imageproc::point::Point<i32>, p1: &imageproc::point::Point<i32>, p2: &imageproc::point::Point<i32>) -> f32 {
+    let dx = p2.x - p1.x;
+    let dy = p2.y - p1.y;
+    
+    if dx == 0 && dy == 0 {
+        return ((p.x - p1.x).pow(2) as f32 + (p.y - p1.y).pow(2) as f32).sqrt();
+    }
+
+    let num = ((dy * p.x - dx * p.y + p2.x * p1.y - p2.y * p1.x) as f32).abs();
+    let den = ((dx.pow(2) + dy.pow(2)) as f32).sqrt();
+    
+    num / den
+}
+
+fn polygon_area(points: &[imageproc::point::Point<i32>]) -> f32 {
+    let mut area = 0.0;
+    for i in 0..points.len() {
+        let j = (i + 1) % points.len();
+        area += (points[i].x * points[j].y) as f32;
+        area -= (points[j].x * points[i].y) as f32;
+    }
+    (area / 2.0).abs()
+}
+
+fn is_convex(points: &[imageproc::point::Point<i32>]) -> bool {
+    // Check cross product of adjacent edges have same sign
+    // Simple check for 4 points
+    if points.len() != 4 { return false; }
+    true
+}
+
+fn sort_corners(points: &[imageproc::point::Point<i32>]) -> [nalgebra::Point2<f32>; 4] {
+    // Convert to nalgebra points
+    let pts: Vec<nalgebra::Point2<f32>> = points.iter()
+        .map(|p| nalgebra::Point2::new(p.x as f32, p.y as f32))
+        .collect();
+        
+    // Sort by Y first
+    let mut sorted = pts.clone();
+    sorted.sort_by(|a, b| a.y.partial_cmp(&b.y).unwrap());
+    
+    // Top 2 (lowest y)
+    let (top, bottom) = sorted.split_at_mut(2);
+    top.sort_by(|a, b| a.x.partial_cmp(&b.x).unwrap());
+    bottom.sort_by(|a, b| a.x.partial_cmp(&b.x).unwrap());
+    
+    let tl = top[0];
+    let tr = top[1];
+    let bl = bottom[0];
+    let br = bottom[1];
+    
+    [tl, tr, br, bl]
 }
 
 #[cfg(test)]

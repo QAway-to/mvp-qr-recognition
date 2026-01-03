@@ -11,12 +11,15 @@ pub mod detection;
 pub mod decoding;
 pub mod payment;
 pub mod ml_detection;
+pub mod emv;
+pub mod geometry;
 
 pub use preprocessing::{ImageProcessor, ProcessingConfig};
 pub use detection::{QRDetector, DetectedQR, DetectorConfig};
 pub use decoding::{QRDecoder, DecodedQR, DecodeError};
 pub use payment::{PaymentParser, PaymentInfo, PaymentFormat};
 pub use ml_detection::OnnxDetector;
+pub use emv::EmvData;
 
 use image::GrayImage;
 use serde::{Deserialize, Serialize};

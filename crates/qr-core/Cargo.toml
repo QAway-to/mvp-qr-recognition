@@ -18,6 +18,7 @@ serde_json.workspace = true
 thiserror.workspace = true
 anyhow.workspace = true
 log.workspace = true
+nalgebra = "0.34.1"
 
 [dev-dependencies]
 criterion = "0.5"

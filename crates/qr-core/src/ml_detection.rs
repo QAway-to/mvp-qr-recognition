@@ -2,6 +2,8 @@ use image::GrayImage;
 use image::imageops::FilterType;
 use tract_onnx::prelude::*;
 use crate::detection::DetectedQR;
+use crate::preprocessing::{ImageProcessor, ProcessingConfig};
+use crate::geometry;
 
 /// ML-based QR Detector using YOLOv8 (ONNX)
 pub struct OnnxDetector {
@@ -129,28 +131,57 @@ impl OnnxDetector {
                 continue;
             }
 
-            // Crop image (requires copying)
-            // For now, we just return the crop (ScanResult expects content, but DetectedQR is intermediate)
-            // Wait, DetectedQR expects `image: GrayImage`.
-            // We need to crop from original `img`.
+            // Crop image
+            let mut crop = image::imageops::crop_imm(img, x, y, width, height).to_image();
+            let mut corners_abs = [
+                (x, y), 
+                (x + width, y), 
+                (x + width, y + height), 
+                (x, y + height)
+            ];
+
+            // "Best Practice": Refine corners and warp perspective
+            // We create a temporary processor for this
+            let processor = ImageProcessor::new(ProcessingConfig::default());
             
-            let crop = image::imageops::crop_imm(img, x, y, width, height).to_image();
-            
-            // Refine crop with finder pattern? 
-            // The ML detection replaces finding. Now we just need to decode this crop.
-            // But DetectedQR structure is: { image: GrayImage, location: ... }
-            // The Caller (QRDetector::detect) will try to decode this crop?
-            // Wait, QRDetector::detect returns Vec<DetectedQR>.
-            // Then QRScanner iterates results and calls Decoder.decode(crop).
-            
+            if let Some(corners) = processor.find_corners(&crop) {
+                // Determine output size (e.g. max side length of the quad)
+                 let side_len = width.max(height); // Simple heuristic
+                 
+                 // Target is a square
+                 let dst = [
+                     nalgebra::Point2::new(0.0, 0.0),
+                     nalgebra::Point2::new(side_len as f32, 0.0),
+                     nalgebra::Point2::new(side_len as f32, side_len as f32),
+                     nalgebra::Point2::new(0.0, side_len as f32),
+                 ];
+                 
+                 if let Some(h) = geometry::find_homography(corners, dst) {
+                     let warped = geometry::warp_perspective(&crop, &h, side_len, side_len);
+                     crop = warped;
+                     
+                     // Update corners to be relative to the warped image?
+                     // Actually DetectedQR.corners usually refers to location in *original* image.
+                     // Mapping the refined corners back to original image is non-trivial if we only have relative corners.
+                     // corners found are relative to `crop`.
+                     // crop offset is (x, y).
+                     
+                     // Let's update corners_abs to reflect the refined corners in original image
+                     let offset_x = x as f32;
+                     let offset_y = y as f32;
+                     
+                     corners_abs = [
+                         ((corners[0].x + offset_x) as u32, (corners[0].y + offset_y) as u32),
+                         ((corners[1].x + offset_x) as u32, (corners[1].y + offset_y) as u32),
+                         ((corners[2].x + offset_x) as u32, (corners[2].y + offset_y) as u32),
+                         ((corners[3].x + offset_x) as u32, (corners[3].y + offset_y) as u32),
+                     ];
+                 }
+            }
+
             qr_results.push(DetectedQR {
                 bbox: [x, y, width, height],
-                corners: [
-                    (x, y), 
-                    (x + width, y), 
-                    (x + width, y + height), 
-                    (x, y + height)
-                ],
+                corners: corners_abs,
                 image: crop,
                 confidence: bbox.score,
             });
