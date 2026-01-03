@@ -145,13 +145,24 @@ export default function Home() {
     const handleFileUpload = async (event) => {
         const file = event.target.files[0];
         if (!file || !scanner) return;
-        log('UPLOAD', 'File', { name: file.name, size: file.size });
+        log('UPLOAD', 'File', { name: file.name, size: file.size, type: file.type });
         setStatus('Processing...');
         try {
+            log('UPLOAD', 'Reading file as ArrayBuffer');
             const arrayBuffer = await file.arrayBuffer();
+            log('UPLOAD', 'ArrayBuffer size', arrayBuffer.byteLength);
+
             const uint8Array = new Uint8Array(arrayBuffer);
+            log('UPLOAD', 'Uint8Array created', { length: uint8Array.length, first4bytes: Array.from(uint8Array.slice(0, 4)) });
+
+            log('UPLOAD', 'Scanner state', { hasScanner: !!scanner, scannerType: typeof scanner });
+            log('UPLOAD', 'Calling scanner.scanImage...');
+
             const result = scanner.scanImage(uint8Array);
-            log('UPLOAD', 'Result', result);
+
+            log('UPLOAD', 'scanImage returned', { hasResult: !!result, resultType: typeof result });
+            log('UPLOAD', 'Result details', result);
+
             if (result?.qr_codes) {
                 setResults(result.qr_codes);
                 setStatus(`Found ${result.qr_codes.length} QR code(s)`);
@@ -160,7 +171,11 @@ export default function Home() {
                 setStatus('No QR codes found');
             }
         } catch (error) {
-            log('UPLOAD', 'ERROR', error.message);
+            log('UPLOAD', 'ERROR caught', {
+                name: error.name,
+                message: error.message,
+                stack: error.stack?.substring(0, 500)
+            });
             setStatus('Error: ' + error.message);
         }
     };
