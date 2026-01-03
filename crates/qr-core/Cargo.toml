@@ -21,6 +21,8 @@ log.workspace = true
 
 [dev-dependencies]
 criterion = "0.5"
+qrcode = "0.12"
+rand = "0.8"
 
 [[bench]]
 name = "detection"

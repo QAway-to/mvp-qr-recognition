@@ -177,7 +177,7 @@ dependencies = [
  "arg_enum_proc_macro",
  "arrayvec",
  "log",
- "num-rational",
+ "num-rational 0.4.2",
  "num-traits",
  "pastey",
  "rayon",
@@ -196,7 +196,7 @@ dependencies = [
  "arrayvec",
  "log",
  "nom 8.0.0",
- "num-rational",
+ "num-rational 0.4.2",
  "v_frame",
 ]
 
@@ -328,6 +328,12 @@ name = "cfg-if"
 version = "1.0.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9330f8b2ff13f34540b44e946ef35111825727b38d33286ef986142615121801"
+
+[[package]]
+name = "checked_int_cast"
+version = "1.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "17cc5e6b5ab06331c33589842070416baa137e8b0eb912b008cfd4a78ada7919"
 
 [[package]]
 name = "chrono"
@@ -975,6 +981,20 @@ dependencies = [
 
 [[package]]
 name = "image"
+version = "0.23.14"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "24ffcb7e7244a9bf19d35bf2883b9c080c4ced3c07a9895572178cdb8f13f6a1"
+dependencies = [
+ "bytemuck",
+ "byteorder",
+ "color_quant",
+ "num-iter",
+ "num-rational 0.3.2",
+ "num-traits",
+]
+
+[[package]]
+name = "image"
 version = "0.25.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e6506c6c10786659413faa717ceebcb8f70731c0a60cbae39795fdf114519c1a"
@@ -1017,7 +1037,7 @@ dependencies = [
  "approx",
  "conv",
  "getrandom 0.2.16",
- "image",
+ "image 0.25.9",
  "itertools 0.12.1",
  "nalgebra",
  "num",
@@ -1035,7 +1055,7 @@ dependencies = [
  "ab_glyph",
  "approx",
  "getrandom 0.2.16",
- "image",
+ "image 0.25.9",
  "itertools 0.12.1",
  "nalgebra",
  "num",
@@ -1380,7 +1400,7 @@ dependencies = [
  "approx",
  "matrixmultiply",
  "num-complex",
- "num-rational",
+ "num-rational 0.4.2",
  "num-traits",
  "simba",
  "typenum",
@@ -1451,7 +1471,7 @@ dependencies = [
  "num-complex",
  "num-integer",
  "num-iter",
- "num-rational",
+ "num-rational 0.4.2",
  "num-traits",
 ]
 
@@ -1505,6 +1525,17 @@ name = "num-iter"
 version = "0.1.45"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1429034a0490724d0075ebb2bc9e875d6503c3cf69e235a8941aa757d83ef5bf"
+dependencies = [
+ "autocfg",
+ "num-integer",
+ "num-traits",
+]
+
+[[package]]
+name = "num-rational"
+version = "0.3.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "12ac428b1cb17fce6f731001d307d351ec70a6d202fc2e60f7d4c5e42d8f4f07"
 dependencies = [
  "autocfg",
  "num-integer",
@@ -1810,9 +1841,11 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "criterion",
- "image",
+ "image 0.25.9",
  "imageproc 0.24.0",
  "log",
+ "qrcode",
+ "rand 0.8.5",
  "rqrr",
  "rxing",
  "serde",
@@ -1829,7 +1862,7 @@ version = "0.1.0"
 dependencies = [
  "console_error_panic_hook",
  "console_log",
- "image",
+ "image 0.25.9",
  "js-sys",
  "log",
  "qr-core",
@@ -1839,6 +1872,16 @@ dependencies = [
  "wasm-bindgen",
  "wasm-bindgen-test",
  "web-sys",
+]
+
+[[package]]
+name = "qrcode"
+version = "0.12.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "16d2f1455f3630c6e5107b4f2b94e74d76dea80736de0981fd27644216cff57f"
+dependencies = [
+ "checked_int_cast",
+ "image 0.23.14",
 ]
 
 [[package]]
@@ -2067,7 +2110,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ad0cd0432e6beb2f86aa4c8af1bb5edcf3c9bcb9d4836facc048664205458575"
 dependencies = [
  "g2p",
- "image",
+ "image 0.25.9",
  "lru",
 ]
 
@@ -2115,7 +2158,7 @@ dependencies = [
  "codepage-437",
  "encoding",
  "fancy-regex",
- "image",
+ "image 0.25.9",
  "imageproc 0.25.0",
  "multimap",
  "num",

@@ -51,7 +51,8 @@ impl ImageProcessor {
     
     /// Полная обработка изображения
     pub fn process(&self, img: &GrayImage) -> GrayImage {
-        let mut result = img.clone();
+        // 0. Resize if too large (improves performance and consistency)
+        let mut result = self.resize(img, 1000); // Max 1000px
         
         // 1. Шумоподавление (если включено)
         if self.config.denoise {
