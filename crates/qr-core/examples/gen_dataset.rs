@@ -2,7 +2,7 @@
 //! 
 //! Usage: cargo run -p qr-core --example gen_dataset
 
-use image::{GrayImage, Luma, Rgb, RgbImage, DynamicImage};
+use image::{GrayImage, Luma};
 use imageproc::filter::gaussian_blur_f32;
 use imageproc::geometric_transformations::{rotate_about_center, Interpolation};
 use qrcode::QrCode;
@@ -11,7 +11,7 @@ use std::path::Path;
 use std::fs;
 
 fn main() {
-    let output_dir = Path::new("../../generated_dataset");
+    let output_dir = Path::new("generated_dataset");
     if output_dir.exists() {
         fs::remove_dir_all(output_dir).unwrap();
     }
@@ -62,7 +62,7 @@ fn main() {
         count += 1;
 
         // 3. Rotated
-        for angle in [15.0, 30.0, 45.0, 90.0] {
+        for angle in [15.0f32, 30.0, 45.0, 90.0] {
             let rotated = rotate_about_center(
                 &img, 
                 angle.to_radians(), 
