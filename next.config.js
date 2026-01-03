@@ -28,6 +28,10 @@ const nextConfig = {
                             from: path.join(__dirname, "node_modules/onnxruntime-web/dist/*.wasm"),
                             to: path.join(__dirname, "public/pkg/[name][ext]"),
                         },
+                        {
+                            from: path.join(__dirname, "node_modules/onnxruntime-web/dist/*.mjs"),
+                            to: path.join(__dirname, "public/pkg/[name][ext]"),
+                        },
                     ],
                 })
             );
