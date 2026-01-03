@@ -151,22 +151,19 @@ impl QRScanner {
     }
     
     /// Сканирование изображения из байтов
+    /// Сканирование изображения из байтов
     pub fn scan_bytes(&self, image_bytes: &[u8]) -> Result<ScanResult, QRError> {
-        let start = std::time::Instant::now();
-        
         // Загрузка изображения
         let img = image::load_from_memory(image_bytes)
             .map_err(|e| QRError::InvalidFormat(e.to_string()))?;
         let gray = img.to_luma8();
         
         // Сканирование
-        let result = self.scan_image(&gray, start);
-        
-        result
+        self.scan_image(&gray)
     }
     
     /// Сканирование GrayImage
-    pub fn scan_image(&self, gray: &GrayImage, start: std::time::Instant) -> Result<ScanResult, QRError> {
+    pub fn scan_image(&self, gray: &GrayImage) -> Result<ScanResult, QRError> {
         log::info!("Starting scan_image, size: {:?}", gray.dimensions());
 
         // Предобработка
@@ -251,7 +248,7 @@ impl QRScanner {
         Ok(ScanResult {
             qr_codes,
             best_payment: best_payment_idx,
-            processing_time_ms: start.elapsed().as_millis() as u64,
+            processing_time_ms: 0,
         })
     }
     

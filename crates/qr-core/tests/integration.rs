@@ -20,8 +20,7 @@ fn test_empty_image_scan() {
     let scanner = QRScanner::new();
     let img = create_test_image(100, 100);
     
-    let start = std::time::Instant::now();
-    let result = scanner.scan_image(&img, start);
+    let result = scanner.scan_image(&img);
     
     assert!(result.is_ok());
     let scan_result = result.unwrap();

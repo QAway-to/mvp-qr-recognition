@@ -92,8 +92,8 @@ impl WasmQRScanner {
         };
         
         // Сканируем
-        let start = std::time::Instant::now();
-        match self.scanner.scan_image(&img, start) {
+        // Сканируем
+        match self.scanner.scan_image(&img) {
             Ok(result) => {
                 serde_wasm_bindgen::to_value(&result)
                     .map_err(|e| JsError::new(&e.to_string()))
