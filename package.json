@@ -1,44 +1,16 @@
 {
-  "name": "qr-wasm-scanner",
-  "version": "0.1.0",
-  "description": "Robust QR code recognition with WASM, supporting payment QR formats",
-  "author": "MVP QR Recognition Team",
-  "license": "MIT",
-  "main": "pkg/qr_wasm.js",
-  "types": "pkg/qr_wasm.d.ts",
-  "files": [
-    "pkg/",
-    "www/"
-  ],
+  "name": "qr-scanner-mvp",
+  "version": "1.0.0",
+  "description": "QR Code Scanner with WASM - Web Application",
+  "private": true,
   "scripts": {
-    "build": "wasm-pack build crates/qr-wasm --target web --out-dir ../../pkg",
-    "build:dev": "wasm-pack build crates/qr-wasm --target web --out-dir ../../pkg --dev",
-    "build:release": "wasm-pack build crates/qr-wasm --target web --out-dir ../../pkg --release",
-    "test": "cargo test --workspace",
-    "test:wasm": "wasm-pack test --headless --chrome crates/qr-wasm",
-    "dev": "npx serve www -l 3000",
-    "lint": "cargo clippy --workspace",
-    "clean": "cargo clean && rimraf pkg"
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start"
   },
-  "devDependencies": {
-    "serve": "^14.2.0",
-    "rimraf": "^5.0.0"
-  },
-  "keywords": [
-    "qr",
-    "qr-code",
-    "scanner",
-    "wasm",
-    "webassembly",
-    "payment",
-    "emv",
-    "sbp"
-  ],
-  "repository": {
-    "type": "git",
-    "url": "https://github.com/your-org/mvp-qr-recognition"
-  },
-  "bugs": {
-    "url": "https://github.com/your-org/mvp-qr-recognition/issues"
+  "dependencies": {
+    "next": "14.0.4",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0"
   }
 }

@@ -1,22 +1,6 @@
 {
-    "buildCommand": null,
-    "outputDirectory": "www",
-    "framework": null,
-    "rewrites": [
-        {
-            "source": "/pkg/(.*)",
-            "destination": "/pkg/$1"
-        }
-    ],
-    "headers": [
-        {
-            "source": "/pkg/(.*).wasm",
-            "headers": [
-                {
-                    "key": "Content-Type",
-                    "value": "application/wasm"
-                }
-            ]
-        }
+    "framework": "nextjs",
+    "regions": [
+        "iad1"
     ]
 }
