@@ -1,0 +1,25 @@
+[package]
+name = "qr-core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Core QR code recognition library with preprocessing and decoding"
+
+[dependencies]
+image.workspace = true
+imageproc.workspace = true
+rxing.workspace = true
+rqrr.workspace = true
+urlencoding.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+anyhow.workspace = true
+log.workspace = true
+
+[dev-dependencies]
+criterion = "0.5"
+
+[[bench]]
+name = "detection"
+harness = false

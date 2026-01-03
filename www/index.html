@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>QR Scanner Demo - WASM</title>
+    <meta name="description" content="Robust QR code scanner with WASM support, payment detection, and image preprocessing">
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="app">
+        <header class="header">
+            <h1>📱 QR Scanner</h1>
+            <p class="subtitle">Robust WASM-based QR code recognition</p>
+        </header>
+
+        <main class="main">
+            <!-- Mode Selector -->
+            <div class="mode-selector">
+                <button class="mode-btn active" data-mode="camera">📷 Camera</button>
+                <button class="mode-btn" data-mode="upload">📁 Upload</button>
+            </div>
+
+            <!-- Scanner Container -->
+            <div class="scanner-container">
+                <!-- Camera View -->
+                <div class="camera-view" id="cameraView">
+                    <video id="video" autoplay playsinline></video>
+                    <canvas id="overlay"></canvas>
+                    <div class="camera-controls">
+                        <button class="btn btn-primary" id="startBtn">Start Camera</button>
+                        <button class="btn btn-secondary" id="switchBtn" style="display: none;">Switch Camera</button>
+                    </div>
+                </div>
+
+                <!-- Upload View -->
+                <div class="upload-view hidden" id="uploadView">
+                    <div class="dropzone" id="dropzone">
+                        <input type="file" id="fileInput" accept="image/*" hidden>
+                        <div class="dropzone-content">
+                            <span class="dropzone-icon">📷</span>
+                            <p>Drop image here or click to upload</p>
+                        </div>
+                    </div>
+                    <canvas id="previewCanvas" class="hidden"></canvas>
+                </div>
+
+                <!-- Results Panel -->
+                <div class="results-panel" id="resultsPanel">
+                    <h3>📊 Results</h3>
+                    <div class="results-content" id="resultsContent">
+                        <p class="placeholder">Scan a QR code to see results</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Processing Stats -->
+            <div class="stats-panel" id="statsPanel">
+                <div class="stat">
+                    <span class="stat-label">Processing time</span>
+                    <span class="stat-value" id="processingTime">-</span>
+                </div>
+                <div class="stat">
+                    <span class="stat-label">QR codes found</span>
+                    <span class="stat-value" id="qrCount">0</span>
+                </div>
+                <div class="stat">
+                    <span class="stat-label">Status</span>
+                    <span class="stat-value" id="status">Ready</span>
+                </div>
+            </div>
+
+            <!-- Settings -->
+            <details class="settings-panel">
+                <summary>⚙️ Settings</summary>
+                <div class="settings-content">
+                    <label class="setting">
+                        <span>Adaptive Threshold</span>
+                        <input type="checkbox" id="adaptiveThreshold" checked>
+                    </label>
+                    <label class="setting">
+                        <span>Denoise</span>
+                        <input type="checkbox" id="denoise" checked>
+                    </label>
+                    <label class="setting">
+                        <span>Enhance Contrast</span>
+                        <input type="checkbox" id="enhanceContrast" checked>
+                    </label>
+                    <label class="setting">
+                        <span>Block Size</span>
+                        <input type="range" id="blockSize" min="11" max="101" value="51" step="2">
+                        <span id="blockSizeValue">51</span>
+                    </label>
+                </div>
+            </details>
+        </main>
+
+        <footer class="footer">
+            <p>QR Scanner v<span id="version">0.1.0</span> | Powered by Rust + WASM</p>
+        </footer>
+    </div>
+
+    <script type="module" src="main.js"></script>
+</body>
+</html>
