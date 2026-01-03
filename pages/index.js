@@ -277,6 +277,12 @@ export default function Home() {
                                         rotCanvas.height = nh;
                                         const rotCtx = rotCanvas.getContext('2d');
 
+                                        // CRITICAL FIX: Fill background with WHITE.
+                                        // Transparent pixels (0,0,0,0) become black in grayscale conversion,
+                                        // destroying the QR quiet zone. We need white padding.
+                                        rotCtx.fillStyle = '#FFFFFF';
+                                        rotCtx.fillRect(0, 0, nw, nh);
+
                                         rotCtx.translate(nw / 2, nh / 2);
                                         rotCtx.rotate(rad);
                                         rotCtx.drawImage(cropCanvas, -w / 2, -h / 2);
