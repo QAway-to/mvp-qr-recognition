@@ -17,7 +17,6 @@ impl OnnxDetector {
         let model = tract_onnx::onnx()
             .model_for_read(&mut cursor)?
             .with_input_fact(0, f32::fact([1, 3, 640, 640]).into())? // Force input shape
-            .into_optimized()?
             .into_runnable()?;
 
         Ok(Self { model })
