@@ -260,8 +260,8 @@ export default function Home() {
                                 if (!cropResult?.qr_codes?.length && w > 0 && h > 0) {
                                     log('SCAN', 'Standard scan failed on crop, trying rotation...');
 
-                                    // Try different angles to catch 30, 45, 60 degree rotations
-                                    const angles = [30, 45, 60];
+                                    // Try different angles to catch 30, 45, 60 degree rotations (both directions)
+                                    const angles = [30, -30, 45, -45, 60, -60];
 
                                     for (const angle of angles) {
                                         log('SCAN', `Attempting rotation: ${angle}°`);
