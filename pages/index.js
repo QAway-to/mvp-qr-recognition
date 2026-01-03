@@ -21,6 +21,7 @@ export default function Home() {
     const canvasRef = useRef(null);
     const streamRef = useRef(null);
     const intervalRef = useRef(null);
+    const wasmModuleRef = useRef(null);
 
     useEffect(() => {
         log('INIT', 'Starting WASM load');
@@ -30,36 +31,35 @@ export default function Home() {
 
     const loadWasm = async () => {
         try {
-            log('WASM', 'Dynamic import starting');
+            log('WASM', 'Fetching JS module');
 
-            // Fetch the JS module as text and create a blob URL
-            const jsResponse = await fetch('/pkg/qr_wasm.js');
-            log('WASM', 'JS fetch status', jsResponse.status);
+            // Fetch the WASM binary first
+            const wasmResponse = await fetch('/pkg/qr_wasm_bg.wasm');
+            log('WASM', 'WASM fetch status', wasmResponse.status);
 
-            if (!jsResponse.ok) {
-                throw new Error(`Failed to fetch JS: ${jsResponse.status}`);
+            if (!wasmResponse.ok) {
+                throw new Error(`Failed to fetch WASM: ${wasmResponse.status}`);
             }
 
+            // Import the JS glue as ES module using dynamic import with data URL
+            log('WASM', 'Fetching JS glue');
+            const jsResponse = await fetch('/pkg/qr_wasm.js');
             const jsText = await jsResponse.text();
-            log('WASM', 'JS text length', jsText.length);
+            log('WASM', 'JS length', jsText.length);
 
-            // Modify the JS to use absolute URL for WASM
-            const modifiedJs = jsText.replace(
-                /input = new URL\('qr_wasm_bg\.wasm', import\.meta\.url\)/g,
-                "input = '/pkg/qr_wasm_bg.wasm'"
-            );
+            // Convert to base64 data URL for import
+            const base64 = btoa(unescape(encodeURIComponent(jsText)));
+            const dataUrl = `data:application/javascript;base64,${base64}`;
 
-            // Create blob and import
-            const blob = new Blob([modifiedJs], { type: 'application/javascript' });
-            const blobUrl = URL.createObjectURL(blob);
+            log('WASM', 'Importing module');
+            const wasmModule = await import(/* webpackIgnore: true */ dataUrl);
+            log('WASM', 'Module keys', Object.keys(wasmModule));
 
-            log('WASM', 'Importing from blob URL');
-            const wasmModule = await import(/* webpackIgnore: true */ blobUrl);
-            log('WASM', 'Module imported, keys:', Object.keys(wasmModule));
+            wasmModuleRef.current = wasmModule;
 
-            // Initialize
-            log('WASM', 'Calling default export (init)');
-            await wasmModule.default();
+            // Initialize with the fetch response (this is supported per line 458-459)
+            log('WASM', 'Calling init with fetch response');
+            await wasmModule.default(wasmResponse);
             log('WASM', 'Init complete');
 
             // Create scanner
@@ -71,13 +71,11 @@ export default function Home() {
                 setStatus('Ready');
                 log('WASM', 'Ready!');
             } else {
-                log('WASM', 'ERROR: No WasmQRScanner export');
+                log('WASM', 'ERROR: No WasmQRScanner in exports');
                 setStatus('Error: WasmQRScanner not found');
             }
-
-            URL.revokeObjectURL(blobUrl);
         } catch (error) {
-            log('WASM', 'ERROR', { name: error.name, message: error.message });
+            log('WASM', 'ERROR', { name: error.name, message: error.message, stack: error.stack });
             setStatus('Error: ' + error.message);
         }
     };
