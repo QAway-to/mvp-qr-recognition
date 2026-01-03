@@ -1,5 +1,5 @@
 /** @type {import('next').NextConfig} */
-const CopyPlugin = require("copy-webpack-plugin");
+
 const path = require("path");
 
 /** @type {import('next').NextConfig} */
@@ -19,23 +19,7 @@ const nextConfig = {
             "onnxruntime-web": path.join(__dirname, "node_modules/onnxruntime-web/dist/ort.all.min.js"),
         };
 
-        // Copy ONNX Runtime WASM files to public directory
-        if (!isServer) {
-            config.plugins.push(
-                new CopyPlugin({
-                    patterns: [
-                        {
-                            from: path.join(__dirname, "node_modules/onnxruntime-web/dist/*.wasm"),
-                            to: path.join(__dirname, "public/pkg/[name][ext]"),
-                        },
-                        {
-                            from: path.join(__dirname, "node_modules/onnxruntime-web/dist/*.mjs"),
-                            to: path.join(__dirname, "public/pkg/[name][ext]"),
-                        },
-                    ],
-                })
-            );
-        }
+        // Manual copy of ONNX Runtime WASM files handled via git to avoid build errors (webpack/terser issues)
 
         return config;
     },
