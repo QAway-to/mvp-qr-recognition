@@ -74,7 +74,7 @@ impl QRDecoder {
         }
 
         // Пробуем rxing (может паниковать из-за таймеров в WASM, поэтому второй)
-        #[cfg(not(target_arch = "wasm32"))]
+        // ENABLED for WASM with default-features=false
         if let Ok(result) = self.decode_with_rxing(img) {
             return Ok(result);
         }
@@ -83,7 +83,7 @@ impl QRDecoder {
         if self.try_inverted {
             let inverted = self.invert_image(img);
             
-            #[cfg(not(target_arch = "wasm32"))]
+            // ENABLED for WASM with default-features=false
             if let Ok(result) = self.decode_with_rxing(&inverted) {
                 return Ok(result);
             }

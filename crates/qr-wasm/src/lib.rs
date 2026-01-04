@@ -11,7 +11,7 @@ use serde_wasm_bindgen;
 pub fn start() {
     console_error_panic_hook::set_once();
     console_log::init_with_level(log::Level::Info).expect("error initializing logger");
-    log::info!("WASM VERSION: DEBUG_RQRR_V3");
+    log::info!("WASM VERSION: RXING_ENABLED_V4 (Default features disabled)");
     log::info!("QR Scanner WASM module initialized");
 }
 
