@@ -127,11 +127,11 @@ impl QRDecoder {
                 BarcodeFormat::QR_CODE,
             ])),
         );
-        // TryHarder может использовать таймеры, что вызывает панику в WASM без поддержки времени
-        // hints.insert(
-        //     rxing::DecodeHintType::TRY_HARDER,
-        //     rxing::DecodeHintValue::TryHarder(true),
-        // );
+        // TryHarder is now safe with chrono + wasmbind
+        hints.insert(
+            rxing::DecodeHintType::TRY_HARDER,
+            rxing::DecodeHintValue::TryHarder(true),
+        );
         
         let mut reader = QRCodeReader::new();
         
