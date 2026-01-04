@@ -3,7 +3,8 @@
 //! Использует rxing как основной декодер с fallback на rqrr
 
 use image::GrayImage;
-use rxing::{BarcodeFormat, DecodingHintDictionary, Exceptions, MultiFormatReader, Reader};
+use rxing::{BarcodeFormat, DecodingHintDictionary, Exceptions, Reader};
+use rxing::qrcode::QRCodeReader;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
@@ -131,7 +132,7 @@ impl QRDecoder {
         //     rxing::DecodeHintValue::TryHarder(true),
         // );
         
-        let mut reader = MultiFormatReader::default();
+        let mut reader = QRCodeReader::new();
         
         match reader.decode_with_hints(&mut bitmap, &hints) {
             Ok(result) => {
