@@ -71,18 +71,13 @@ impl QRDecoder {
     pub fn decode(&self, img: &GrayImage) -> Result<DecodedQR, DecodeError> {
         // 1. Стандартное декодирование
         // Пробуем rqrr сначала (более стабилен для WASM)
-        let rqrr_result = self.decode_with_rqrr(img);
-        
-        // Если rqrr нашел сетку, но не смог декодировать (DataEcc/FormatEcc), 
-        // это сильный сигнал попробовать альтернативные методы бинаризации в rxing
-        let strong_hint = matches!(rqrr_result, Err(DecodeError::DecodeFailed(_)));
-        
-        if let Ok(result) = rqrr_result {
+        if let Ok(result) = self.decode_with_rqrr(img) {
             return Ok(result);
         }
 
-        // Пробуем rxing c умным фоллбеком
-        if let Ok(result) = self.decode_with_rxing(img, strong_hint) {
+        // Пробуем rxing. В V14 мы убираем ограничение strong_hint для GlobalHistogram,
+        // чтобы вернуть максимальную надежность. Всегда пробуем все методы.
+        if let Ok(result) = self.decode_with_rxing(img, true) {
             return Ok(result);
         }
         
@@ -91,22 +86,15 @@ impl QRDecoder {
             log::info!("FALLBACK: Trying inverted image...");
             let inverted = self.invert_image(img);
             
-            // Сначала rqrr для инвертированного
-            let rqrr_inv_result = self.decode_with_rqrr(&inverted);
-            let strong_hint_inv = matches!(rqrr_inv_result, Err(DecodeError::DecodeFailed(_)));
-            
-            if let Ok(result) = rqrr_inv_result {
+            if let Ok(result) = self.decode_with_rqrr(&inverted) {
                 return Ok(result);
             }
-            
-            // Затем rxing
-            if let Ok(result) = self.decode_with_rxing(&inverted, strong_hint_inv) {
+            if let Ok(result) = self.decode_with_rxing(&inverted, true) {
                 return Ok(result);
             }
         }
 
         // 3. Улучшенное изображение (Контраст + Резкость)
-        // Запускаем ТОЛЬКО если предыдущие шаги не сработали
         log::info!("FALLBACK: Standard/Inverted failed. Trying Advanced Preprocessing (Contrast + Sharpen)...");
         let preprocessed = self.preprocess_image(img);
 
@@ -115,25 +103,39 @@ impl QRDecoder {
             log::info!("SUCCESS: Advanced Preprocessing + RQRR worked!");
             return Ok(result);
         }
-        // Strong hint is almost always true for preprocessed if it failed rqrr but found grid
         if let Ok(result) = self.decode_with_rxing(&preprocessed, true) {
             log::info!("SUCCESS: Advanced Preprocessing + RXING worked!");
             return Ok(result);
         }
 
-        // b) Inverted Preprocessed (Final Hail Mary)
+        // b) Inverted Preprocessed
         if self.try_inverted {
-            log::info!("FALLBACK: Starting Final Attempt (Preprocessed + Inverted)...");
+            log::info!("FALLBACK: Trying Preprocessed + Inverted...");
             let prep_inverted = self.invert_image(&preprocessed);
             
             if let Ok(result) = self.decode_with_rqrr(&prep_inverted) {
-                log::info!("SUCCESS: Final Attempt (Preprocessed+Inverted) + RQRR worked!");
+                log::info!("SUCCESS: Preprocessed+Inverted + RQRR worked!");
                 return Ok(result);
             }
             if let Ok(result) = self.decode_with_rxing(&prep_inverted, true) {
-                log::info!("SUCCESS: Final Attempt (Preprocessed+Inverted) + RXING worked!");
+                log::info!("SUCCESS: Preprocessed+Inverted + RXING worked!");
                 return Ok(result);
             }
+        }
+
+        // 4. Hard Thresholding (Hail Mary 128)
+        // В V14 добавление: если умные методы не сработали, пробуем тупую бинаризацию по среднему.
+        // Это помогает, когда гистограмма размыта, но информация есть.
+        log::info!("FALLBACK: Trying Hard Thresholding (128)...");
+        let thresholded = self.apply_threshold(img, 128);
+        if let Ok(result) = self.decode_with_rqrr(&thresholded) {
+            log::info!("SUCCESS: Hard Threshold (128) + RQRR worked!");
+            return Ok(result);
+        }
+        // rxing на бинарном изображении
+        if let Ok(result) = self.decode_with_rxing(&thresholded, true) {
+            log::info!("SUCCESS: Hard Threshold (128) + RXING worked!");
+            return Ok(result);
         }
         
         Err(DecodeError::NotFound)
@@ -199,6 +201,18 @@ impl QRDecoder {
                 let clamped = val.max(0).min(255) as u8;
                 result.put_pixel(x, y, image::Luma([clamped]));
             }
+        }
+        result
+    }
+
+    /// Жесткая бинаризация по порогу
+    fn apply_threshold(&self, img: &GrayImage, threshold: u8) -> GrayImage {
+        let (width, height) = img.dimensions();
+        let mut result = GrayImage::new(width, height);
+        
+        for (x, y, p) in img.enumerate_pixels() {
+            let val = if p.0[0] < threshold { 0 } else { 255 };
+            result.put_pixel(x, y, image::Luma([val]));
         }
         result
     }
