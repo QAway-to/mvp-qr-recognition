@@ -70,13 +70,19 @@ impl QRDecoder {
     /// Декодирование QR-кода
     pub fn decode(&self, img: &GrayImage) -> Result<DecodedQR, DecodeError> {
         // Пробуем rqrr сначала (более стабилен для WASM)
-        if let Ok(result) = self.decode_with_rqrr(img) {
+        let rqrr_result = self.decode_with_rqrr(img);
+        
+        // Если rqrr нашел сетку, но не смог декодировать (DataEcc/FormatEcc), 
+        // это сильный сигнал попробовать альтернативные методы бинаризации в rxing
+        let strong_hint = matches!(rqrr_result, Err(DecodeError::DecodeFailed(_)));
+        
+        if let Ok(result) = rqrr_result {
             return Ok(result);
         }
 
-        // Пробуем rxing (может паниковать из-за таймеров в WASM, поэтому второй)
-        // ENABLED for WASM with default-features=false
-        if let Ok(result) = self.decode_with_rxing(img) {
+        // Пробуем rxing
+        // Включаем GlobalHistogramBinarizer только если rqrr что-то нашел, чтобы экономить CPU
+        if let Ok(result) = self.decode_with_rxing(img, strong_hint) {
             return Ok(result);
         }
         
@@ -84,12 +90,16 @@ impl QRDecoder {
         if self.try_inverted {
             let inverted = self.invert_image(img);
             
-            // ENABLED for WASM with default-features=false
-            if let Ok(result) = self.decode_with_rxing(&inverted) {
+            // Сначала rqrr для инвертированного (быстрее)
+            let rqrr_inv_result = self.decode_with_rqrr(&inverted);
+            let strong_hint_inv = matches!(rqrr_inv_result, Err(DecodeError::DecodeFailed(_)));
+            
+            if let Ok(result) = rqrr_inv_result {
                 return Ok(result);
             }
             
-            if let Ok(result) = self.decode_with_rqrr(&inverted) {
+            // Затем rxing с умным фоллбеком
+            if let Ok(result) = self.decode_with_rxing(&inverted, strong_hint_inv) {
                 return Ok(result);
             }
         }
@@ -98,7 +108,7 @@ impl QRDecoder {
     }
     
     /// Декодирование через rxing
-    fn decode_with_rxing(&self, img: &GrayImage) -> Result<DecodedQR, DecodeError> {
+    fn decode_with_rxing(&self, img: &GrayImage, try_fallback: bool) -> Result<DecodedQR, DecodeError> {
         log::info!("RXING: Starting decode on {}x{} image", img.width(), img.height());
         let (width, height) = img.dimensions();
         
@@ -135,7 +145,7 @@ impl QRDecoder {
         
         let mut reader = QRCodeReader::new();
         
-        // Попытка 1: HybridBinarizer (хорошо для сложных теней/градиентов)
+        // Попытка 1: HybridBinarizer (стандарт)
         match reader.decode_with_hints(&mut bitmap, &hints) {
             Ok(result) => {
                 log::info!("RXING: Decode success (HybridBinarizer)!");
@@ -147,39 +157,42 @@ impl QRDecoder {
                 });
             }
             Err(_) => {
-                // Продолжаем ко второй попытке
+                // Ignore error
             }
         }
 
-        // Попытка 2: GlobalHistogramBinarizer (хорошо для контрастных но специфичных изображений)
-        log::info!("RXING: HybridBinarizer failed, trying GlobalHistogramBinarizer");
+        // Попытка 2: GlobalHistogramBinarizer (только если есть сильный сигнал)
+        if try_fallback {
+            log::info!("RXING: HybridBinarizer failed, trying GlobalHistogramBinarizer (strong hint)");
+            
+            let luminance_source_global = rxing::RGBLuminanceSource::new_with_width_height_pixels(
+                width as usize,
+                height as usize,
+                &pixels,
+            );
+            let mut bitmap_global = rxing::BinaryBitmap::new(rxing::common::GlobalHistogramBinarizer::new(luminance_source_global));
+    
+            match reader.decode_with_hints(&mut bitmap_global, &hints) {
+                Ok(result) => {
+                    log::info!("RXING: Decode success (GlobalHistogramBinarizer)!");
+                    return Ok(DecodedQR {
+                        content: result.getText().to_string(),
+                        error_correction: ErrorCorrectionLevel::Unknown,
+                        version: None,
+                        encoding: format!("{:?}", result.getBarcodeFormat()),
+                    });
+                }
+                Err(e) => {
+                    log::info!("RXING: GlobalHistogram failed: {}", e);
+                }
+            }
+        } else {
+             log::info!("RXING: Not found (HybridBinarizer)");
+             return Err(DecodeError::NotFound);
+        }
         
-        let luminance_source_global = rxing::RGBLuminanceSource::new_with_width_height_pixels(
-            width as usize,
-            height as usize,
-            &pixels,
-        );
-        let mut bitmap_global = rxing::BinaryBitmap::new(rxing::common::GlobalHistogramBinarizer::new(luminance_source_global));
-
-        match reader.decode_with_hints(&mut bitmap_global, &hints) {
-            Ok(result) => {
-                log::info!("RXING: Decode success (GlobalHistogramBinarizer)!");
-                Ok(DecodedQR {
-                    content: result.getText().to_string(),
-                    error_correction: ErrorCorrectionLevel::Unknown,
-                    version: None,
-                    encoding: format!("{:?}", result.getBarcodeFormat()),
-                })
-            }
-            Err(Exceptions::NotFoundException(_)) => {
-                log::info!("RXING: Not found");
-                Err(DecodeError::NotFound)
-            },
-            Err(e) => {
-                log::info!("RXING: Decode failed: {}", e);
-                Err(DecodeError::DecodeFailed(e.to_string()))
-            },
-        }
+        log::info!("RXING: Not found");
+        Err(DecodeError::NotFound)
     }
     
     /// Декодирование через rqrr (fallback)
