@@ -2,8 +2,8 @@
 /* eslint-disable */
 export const memory: WebAssembly.Memory;
 export const __wbg_wasmqrscanner_free: (a: number, b: number) => void;
-export const init: () => void;
 export const quickScan: (a: number, b: number) => [number, number, number];
+export const start: () => void;
 export const version: () => [number, number];
 export const wasmqrscanner_loadModel: (a: number, b: number, c: number) => [number, number];
 export const wasmqrscanner_new: () => number;

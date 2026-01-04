@@ -267,13 +267,6 @@ export class WasmQRScanner {
 if (Symbol.dispose) WasmQRScanner.prototype[Symbol.dispose] = WasmQRScanner.prototype.free;
 
 /**
- * Инициализация panic hook для отладки
- */
-export function init() {
-    wasm.init();
-}
-
-/**
  * Удобная функция для быстрого сканирования
  * @param {Uint8Array} image_data
  * @returns {any}
@@ -286,6 +279,13 @@ export function quickScan(image_data) {
         throw takeFromExternrefTable0(ret[1]);
     }
     return takeFromExternrefTable0(ret[0]);
+}
+
+/**
+ * Инициализация panic hook для отладки
+ */
+export function start() {
+    wasm.start();
 }
 
 /**

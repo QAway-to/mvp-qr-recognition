@@ -66,14 +66,14 @@ export class WasmQRScanner {
 }
 
 /**
- * Инициализация panic hook для отладки
- */
-export function init(): void;
-
-/**
  * Удобная функция для быстрого сканирования
  */
 export function quickScan(image_data: Uint8Array): any;
+
+/**
+ * Инициализация panic hook для отладки
+ */
+export function start(): void;
 
 /**
  * Информация о версии
@@ -85,8 +85,8 @@ export type InitInput = RequestInfo | URL | Response | BufferSource | WebAssembl
 export interface InitOutput {
   readonly memory: WebAssembly.Memory;
   readonly __wbg_wasmqrscanner_free: (a: number, b: number) => void;
-  readonly init: () => void;
   readonly quickScan: (a: number, b: number) => [number, number, number];
+  readonly start: () => void;
   readonly version: () => [number, number];
   readonly wasmqrscanner_loadModel: (a: number, b: number, c: number) => [number, number];
   readonly wasmqrscanner_new: () => number;
