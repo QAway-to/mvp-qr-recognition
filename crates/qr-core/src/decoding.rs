@@ -149,10 +149,13 @@ impl QRDecoder {
     
     /// Декодирование через rqrr (fallback)
     fn decode_with_rqrr(&self, img: &GrayImage) -> Result<DecodedQR, DecodeError> {
+        log::info!("RQRR: Starting detection on {}x{} image", img.width(), img.height());
         let mut prepared = rqrr::PreparedImage::prepare(img.clone());
         let grids = prepared.detect_grids();
+        log::info!("RQRR: Detected {} grids", grids.len());
         
         if grids.is_empty() {
+            log::info!("RQRR: No grids found");
             return Err(DecodeError::NotFound);
         }
         
@@ -161,6 +164,7 @@ impl QRDecoder {
         
         match grid.decode() {
             Ok((meta, content)) => {
+                log::info!("RQRR: Decode success!");
                 let error_correction = match meta.ecc_level {
                     0 => ErrorCorrectionLevel::L,
                     1 => ErrorCorrectionLevel::M,
@@ -176,7 +180,10 @@ impl QRDecoder {
                     encoding: "Byte".to_string(),
                 })
             }
-            Err(e) => Err(DecodeError::DecodeFailed(format!("{:?}", e))),
+            Err(e) => {
+                log::info!("RQRR: Decode failed: {:?}", e);
+                Err(DecodeError::DecodeFailed(format!("{:?}", e)))
+            },
         }
     }
     
