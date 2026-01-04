@@ -11,7 +11,7 @@ ml = ["dep:tract-core", "dep:tract-onnx"]
 
 [dependencies]
 image.workspace = true
-imageproc.workspace = true
+
 rxing = { version = "0.6", default-features = false }
 rqrr.workspace = true
 urlencoding.workspace = true

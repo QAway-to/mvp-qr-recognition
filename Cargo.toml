@@ -11,7 +11,7 @@ repository = "https://github.com/your-org/mvp-qr-recognition"
 [workspace.dependencies]
 # Image processing
 image = { version = "0.25", default-features = false, features = ["png", "jpeg"] }
-imageproc = "0.24"
+imageproc = { version = "0.24", default-features = false }
 
 # QR decoding
 rxing = "0.6"

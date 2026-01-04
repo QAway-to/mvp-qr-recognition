@@ -69,6 +69,7 @@ impl QRDecoder {
     
     /// Декодирование QR-кода
     pub fn decode(&self, img: &GrayImage) -> Result<DecodedQR, DecodeError> {
+        // 1. Стандартное декодирование
         // Пробуем rqrr сначала (более стабилен для WASM)
         let rqrr_result = self.decode_with_rqrr(img);
         
@@ -80,17 +81,17 @@ impl QRDecoder {
             return Ok(result);
         }
 
-        // Пробуем rxing
-        // Включаем GlobalHistogramBinarizer только если rqrr что-то нашел, чтобы экономить CPU
+        // Пробуем rxing c умным фоллбеком
         if let Ok(result) = self.decode_with_rxing(img, strong_hint) {
             return Ok(result);
         }
         
-        // Пробуем инвертированное изображение
+        // 2. Инвертированное изображение
         if self.try_inverted {
+            log::info!("FALLBACK: Trying inverted image...");
             let inverted = self.invert_image(img);
             
-            // Сначала rqrr для инвертированного (быстрее)
+            // Сначала rqrr для инвертированного
             let rqrr_inv_result = self.decode_with_rqrr(&inverted);
             let strong_hint_inv = matches!(rqrr_inv_result, Err(DecodeError::DecodeFailed(_)));
             
@@ -98,13 +99,108 @@ impl QRDecoder {
                 return Ok(result);
             }
             
-            // Затем rxing с умным фоллбеком
+            // Затем rxing
             if let Ok(result) = self.decode_with_rxing(&inverted, strong_hint_inv) {
+                return Ok(result);
+            }
+        }
+
+        // 3. Улучшенное изображение (Контраст + Резкость)
+        // Запускаем ТОЛЬКО если предыдущие шаги не сработали
+        log::info!("FALLBACK: Standard/Inverted failed. Trying Advanced Preprocessing (Contrast + Sharpen)...");
+        let preprocessed = self.preprocess_image(img);
+
+        // a) Standard Preprocessed
+        if let Ok(result) = self.decode_with_rqrr(&preprocessed) {
+            log::info!("SUCCESS: Advanced Preprocessing + RQRR worked!");
+            return Ok(result);
+        }
+        // Strong hint is almost always true for preprocessed if it failed rqrr but found grid
+        if let Ok(result) = self.decode_with_rxing(&preprocessed, true) {
+            log::info!("SUCCESS: Advanced Preprocessing + RXING worked!");
+            return Ok(result);
+        }
+
+        // b) Inverted Preprocessed (Final Hail Mary)
+        if self.try_inverted {
+            log::info!("FALLBACK: Starting Final Attempt (Preprocessed + Inverted)...");
+            let prep_inverted = self.invert_image(&preprocessed);
+            
+            if let Ok(result) = self.decode_with_rqrr(&prep_inverted) {
+                log::info!("SUCCESS: Final Attempt (Preprocessed+Inverted) + RQRR worked!");
+                return Ok(result);
+            }
+            if let Ok(result) = self.decode_with_rxing(&prep_inverted, true) {
+                log::info!("SUCCESS: Final Attempt (Preprocessed+Inverted) + RXING worked!");
                 return Ok(result);
             }
         }
         
         Err(DecodeError::NotFound)
+    }
+
+    /// Предобработка: Растяжение контраста + Повышение резкости
+    fn preprocess_image(&self, img: &GrayImage) -> GrayImage {
+        // 1. Растяжение контраста (нормализация гистограммы)
+        let contrast_img = self.apply_contrast_stretch(img);
+
+        // 2. Повышение резкости (Sharpening)
+        // Используем стандартный 3x3 фильтр для выделения краев модулей QR кода
+        self.apply_sharpen(&contrast_img)
+    }
+
+    fn apply_contrast_stretch(&self, img: &GrayImage) -> GrayImage {
+        let mut min_val = 255u8;
+        let mut max_val = 0u8;
+
+        for p in img.pixels() {
+            let val = p.0[0];
+            if val < min_val { min_val = val; }
+            if val > max_val { max_val = val; }
+        }
+
+        if min_val >= max_val {
+            return img.clone();
+        }
+
+        let (width, height) = img.dimensions();
+        let mut result = GrayImage::new(width, height);
+        
+        let range = (max_val - min_val) as f32;
+
+        for (x, y, p) in img.enumerate_pixels() {
+            let val = p.0[0];
+            // (val - min) / (max - min) * 255
+            let new_val = ((val as f32 - min_val as f32) / range * 255.0) as u8;
+            result.put_pixel(x, y, image::Luma([new_val]));
+        }
+        result
+    }
+
+    fn apply_sharpen(&self, img: &GrayImage) -> GrayImage {
+        let (width, height) = img.dimensions();
+        // Start with a copy to preserve borders
+        let mut result = img.clone(); 
+        
+        // Kernel:
+        //  0 -1  0
+        // -1  5 -1
+        //  0 -1  0
+        
+        for y in 1..height-1 {
+            for x in 1..width-1 {
+                // Unsafe get is slightly faster but safe get is fine here
+                let val = (img.get_pixel(x, y).0[0] as i32 * 5)
+                        - (img.get_pixel(x, y-1).0[0] as i32)
+                        - (img.get_pixel(x, y+1).0[0] as i32)
+                        - (img.get_pixel(x-1, y).0[0] as i32)
+                        - (img.get_pixel(x+1, y).0[0] as i32);
+                
+                let clamped = val.max(0).min(255) as u8;
+                result.put_pixel(x, y, image::Luma([clamped]));
+            }
+        }
+        result
     }
     
     /// Декодирование через rxing
