@@ -9,7 +9,7 @@ export default async function handler(req, res) {
     // Return version and status as downloadable JSON
     return res.status(200).json({
         status: 'ready',
-        version: 'V16',
+        version: 'V17',
         timestamp: new Date().toISOString(),
         logs: ['QR Scanner API is operational.']
     });

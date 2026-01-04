@@ -123,13 +123,44 @@ impl QRDecoder {
             }
         }
 
-        // 4. Multi-Threshold Fallback (V16)
+        // 4. Add Padding Fallback (V17 - Quiet Zone Restoration)
+        // Если изображение обрезано слишком близко к QR-коду (особенно при повороте),
+        // добавляем белую рамку (Quiet Zone).
+        log::info!("FALLBACK: Trying Padding (Quiet Zone Restoration)...");
+        let padded = self.add_white_padding(img, 20); // 20px padding
+        if let Ok(result) = self.decode_with_rqrr(&padded) {
+            log::info!("SUCCESS: Padding + RQRR worked!");
+            return Ok(result);
+        }
+        if let Ok(result) = self.decode_with_rxing(&padded, true) {
+            log::info!("SUCCESS: Padding + RXING worked!");
+            return Ok(result);
+        }
+
+        // Также пробуем инвертированный вариант с padding (на случай черного фона)
+        if self.try_inverted {
+            log::info!("FALLBACK: Trying Padding + Inverted...");
+            // Инвертируем СНАЧАЛА, потом добавляем паддинг (чтобы был белый фон вокруг инвертированного QR)
+            // Но если QR был "белый на черном", то после инверсии он стал "черный на белом".
+            // Значит паддинг должен быть БЕЛЫМ.
+            let inverted = self.invert_image(img);
+            let padded_inverted = self.add_white_padding(&inverted, 20);
+            
+            if let Ok(result) = self.decode_with_rqrr(&padded_inverted) {
+                log::info!("SUCCESS: Padding + Inverted + RQRR worked!");
+                return Ok(result);
+            }
+            if let Ok(result) = self.decode_with_rxing(&padded_inverted, true) {
+                log::info!("SUCCESS: Padding + Inverted + RXING worked!");
+                return Ok(result);
+            }
+        }
+
+        // 5. Multi-Threshold Fallback (V16)
         // Пробуем несколько порогов бинаризации, включая автоматический (Otsu).
-        // Это критично для изображений с разным освещением.
         let otsu_threshold = self.calculate_otsu_threshold(img);
         log::info!("FALLBACK: Trying Multi-Threshold (Otsu={}, 64, 96, 128, 160, 192)...", otsu_threshold);
         
-        // Сначала пробуем Otsu (наиболее вероятный), потом фиксированные пороги
         let thresholds: [u8; 6] = [otsu_threshold, 64, 96, 128, 160, 192];
         
         for threshold in thresholds {
@@ -144,8 +175,7 @@ impl QRDecoder {
             }
         }
 
-        // 5. Downscale Fallback (V16)
-        // Иногда уменьшение изображения сглаживает шум и помогает.
+        // 6. Downscale Fallback (V16)
         if img.width() > 400 || img.height() > 400 {
             log::info!("FALLBACK: Trying Downscale (50%)...");
             let downscaled = self.downscale_image(img, 2);
@@ -160,6 +190,21 @@ impl QRDecoder {
         }
         
         Err(DecodeError::NotFound)
+    }
+
+    /// Добавляет белую рамку вокруг изображения
+    fn add_white_padding(&self, img: &GrayImage, padding: u32) -> GrayImage {
+        let (width, height) = img.dimensions();
+        let new_width = width + padding * 2;
+        let new_height = height + padding * 2;
+        
+        // Создаем изображение, заполненное белым (255)
+        let mut padded = GrayImage::from_pixel(new_width, new_height, image::Luma([255]));
+        
+        // Копируем исходное изображение в центр
+        image::imageops::overlay(&mut padded, img, padding as i64, padding as i64);
+        
+        padded
     }
 
     /// Предобработка: Растяжение контраста + Повышение резкости
