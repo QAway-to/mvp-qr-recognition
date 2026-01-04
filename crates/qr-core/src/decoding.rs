@@ -135,9 +135,35 @@ impl QRDecoder {
         
         let mut reader = QRCodeReader::new();
         
+        // Попытка 1: HybridBinarizer (хорошо для сложных теней/градиентов)
         match reader.decode_with_hints(&mut bitmap, &hints) {
             Ok(result) => {
-                log::info!("RXING: Decode success!");
+                log::info!("RXING: Decode success (HybridBinarizer)!");
+                return Ok(DecodedQR {
+                    content: result.getText().to_string(),
+                    error_correction: ErrorCorrectionLevel::Unknown,
+                    version: None,
+                    encoding: format!("{:?}", result.getBarcodeFormat()),
+                });
+            }
+            Err(_) => {
+                // Продолжаем ко второй попытке
+            }
+        }
+
+        // Попытка 2: GlobalHistogramBinarizer (хорошо для контрастных но специфичных изображений)
+        log::info!("RXING: HybridBinarizer failed, trying GlobalHistogramBinarizer");
+        
+        let luminance_source_global = rxing::RGBLuminanceSource::new_with_width_height_pixels(
+            width as usize,
+            height as usize,
+            &pixels,
+        );
+        let mut bitmap_global = rxing::BinaryBitmap::new(rxing::common::GlobalHistogramBinarizer::new(luminance_source_global));
+
+        match reader.decode_with_hints(&mut bitmap_global, &hints) {
+            Ok(result) => {
+                log::info!("RXING: Decode success (GlobalHistogramBinarizer)!");
                 Ok(DecodedQR {
                     content: result.getText().to_string(),
                     error_correction: ErrorCorrectionLevel::Unknown,
