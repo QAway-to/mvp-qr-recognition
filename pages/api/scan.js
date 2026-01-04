@@ -49,30 +49,27 @@ export default async function handler(req, res) {
 
         const wasm = await loadWasm();
 
+        // Intercept console logs to return them in the response
+        const logs = [];
+        const originalLog = console.log;
+        const originalInfo = console.info;
+        const originalWarn = console.warn;
+        const originalError = console.error;
+
+        function intercept(args) {
+            logs.push(args.map(a => String(a)).join(' '));
+        }
+
+        console.log = (...args) => { intercept(args); originalLog.apply(console, args); };
+        console.info = (...args) => { intercept(args); originalInfo.apply(console, args); };
+        console.warn = (...args) => { intercept(args); originalWarn.apply(console, args); };
+        // We probably don't want to swallow errors, but we can capture them
+        console.error = (...args) => { intercept(args); originalError.apply(console, args); };
+
         // Use the synchronous or async scan method
         // scan_image returns a JS object with result
         // We create a new scanner instance for each request to ensure isolation
         const scanner = new wasm.WasmQRScanner();
-
-        // Intercept console logs to capture WASM output
-        const logs = [];
-        const originalInfo = console.info;
-        const originalLog = console.log;
-        const originalError = console.error;
-        const originalDebug = console.debug;
-
-        const captureLog = (type, args) => {
-            const msg = args.map(a => (typeof a === 'object' ? JSON.stringify(a) : String(a))).join(' ');
-            logs.push(`[${type.toUpperCase()}] ${msg}`);
-            // Also print to real stdout for Vercel logs
-            if (type === 'error') originalError.apply(console, args);
-            else originalInfo.apply(console, args);
-        };
-
-        console.info = (...args) => captureLog('info', args);
-        console.log = (...args) => captureLog('info', args);
-        console.error = (...args) => captureLog('error', args);
-        console.debug = (...args) => captureLog('debug', args);
 
         let result;
         try {
@@ -80,24 +77,19 @@ export default async function handler(req, res) {
             result = scanner.scan_image(bytes);
         } catch (e) {
             console.error('WASM Scan Error:', e);
-            // Restore console before returning error
-            console.info = originalInfo;
+            result = { error: e.toString() };
+        } finally {
+            // Restore console
             console.log = originalLog;
+            console.info = originalInfo;
+            console.warn = originalWarn;
             console.error = originalError;
-            console.debug = originalDebug;
-            return res.status(500).json({ error: 'Scanning failed', details: e.toString(), logs });
         }
 
-        // Restore console
-        console.info = originalInfo;
-        console.log = originalLog;
-        console.error = originalError;
-        console.debug = originalDebug;
-
-        return res.status(200).json({ ...result, logs });
+        return res.status(200).json({ result, logs });
 
     } catch (error) {
-        console.error('API Error:', error);
+        console.error('API Error:', error); // This might use the intercepted console if error happens during interception block, which is fine
         return res.status(500).json({ error: error.message });
     }
 }

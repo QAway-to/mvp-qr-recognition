@@ -53,7 +53,16 @@ export default function ApiLogs() {
             {result && (
                 <div style={{ marginTop: '1rem', background: '#f5f5f5', padding: '1rem', borderRadius: '4px' }}>
                     <h3>Scan Result:</h3>
-                    <pre>{JSON.stringify(result, null, 2)}</pre>
+                    <pre>{JSON.stringify(result.result, null, 2)}</pre>
+
+                    {result.logs && (
+                        <>
+                            <h3>Execution Logs:</h3>
+                            <div style={{ background: '#333', color: '#fff', padding: '1rem', borderRadius: '4px', overflowX: 'auto' }}>
+                                <pre>{result.logs.join('\n')}</pre>
+                            </div>
+                        </>
+                    )}
                 </div>
             )}
         </div>
