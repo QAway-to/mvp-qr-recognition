@@ -47,6 +47,8 @@ export default function Home() {
     const [scanning, setScanning] = useState(false);
     const [batchResults, setBatchResults] = useState([]);
     const [mlLoaded, setMlLoaded] = useState(false);
+    // ML init state machine: 'idle' -> 'loading' -> 'ready' | 'failed'
+    const [mlStatus, setMlStatus] = useState(ENABLE_ML_DETECTION ? 'idle' : 'disabled');
 
     const videoRef = useRef(null);
     const canvasRef = useRef(null);
@@ -54,6 +56,12 @@ export default function Home() {
     const intervalRef = useRef(null);
     const wasmModuleRef = useRef(null);
     const mlDetectorRef = useRef(null);  // JS-based ML detector
+    const mlStatusRef = useRef(mlStatus);
+    const mlInitPromiseRef = useRef(null);
+
+    useEffect(() => {
+        mlStatusRef.current = mlStatus;
+    }, [mlStatus]);
 
     const loadWasm = async () => {
         try {
@@ -99,21 +107,39 @@ export default function Home() {
 
                 // Try to load ML model using JS onnxruntime-web (only if enabled)
                 if (ENABLE_ML_DETECTION) {
-                    try {
-                        log('ML', 'Loading onnxruntime-web MLDetector...');
-                        const { MLDetector } = await import('../lib/mlDetector.js');
-                        const detector = new MLDetector();
-                        const loaded = await detector.loadModel('/model.onnx');
-                        if (loaded) {
-                            mlDetectorRef.current = detector;
-                            setMlLoaded(true);
-                            log('ML', 'JS MLDetector ready (onnxruntime-web + WebGL)');
-                        } else {
-                            log('ML', 'Failed to load model');
+                    setMlStatus('loading');
+                    mlStatusRef.current = 'loading';
+
+                    // Start ML init once. Scans can await a short race against this promise if needed.
+                    mlInitPromiseRef.current = (async () => {
+                        try {
+                            log('ML', 'Loading onnxruntime-web MLDetector...');
+                            const { MLDetector } = await import('../lib/mlDetector.js');
+                            const detector = new MLDetector();
+                            const loaded = await detector.loadModel('/model.onnx');
+
+                            if (loaded) {
+                                mlDetectorRef.current = detector;
+                                setMlLoaded(true);
+                                setMlStatus('ready');
+                                mlStatusRef.current = 'ready';
+                                log('ML', 'JS MLDetector ready (onnxruntime-web)');
+                                return true;
+                            }
+
+                            setMlLoaded(false);
+                            setMlStatus('failed');
+                            mlStatusRef.current = 'failed';
+                            log('ML', 'Failed to load model (loaded=false)');
+                            return false;
+                        } catch (e) {
+                            setMlLoaded(false);
+                            setMlStatus('failed');
+                            mlStatusRef.current = 'failed';
+                            log('ML', 'Failed to init MLDetector', e?.message || String(e));
+                            return false;
                         }
-                    } catch (e) {
-                        log('ML', 'Failed to init MLDetector', e.message);
-                    }
+                    })();
                 } else {
                     log('ML', 'ML detection disabled (ENABLE_ML_DETECTION = false)');
                 }
@@ -195,26 +221,16 @@ export default function Home() {
         if ((!result?.qr_codes || result.qr_codes.length === 0)) {
             // Check if we should use ML
             if (ENABLE_ML_DETECTION) {
-                // If model is needed but not loaded, wait for it
-                if (!mlDetectorRef.current && !mlLoaded) {
-                    log('SCAN', 'Waiting for ML model to load...');
-                    const waitForModel = new Promise((resolve) => {
-                        const checkInterval = setInterval(() => {
-                            if (mlDetectorRef.current) {
-                                clearInterval(checkInterval);
-                                resolve(true);
-                            }
-                        }, 500);
-                        setTimeout(() => {
-                            clearInterval(checkInterval);
-                            resolve(false);
-                        }, 10000);
-                    });
-
-                    await waitForModel;
+                // If ML is still initializing, wait a tiny bit (never 10s per image)
+                if (mlStatusRef.current === 'loading' && mlInitPromiseRef.current) {
+                    await Promise.race([
+                        mlInitPromiseRef.current,
+                        new Promise((resolve) => setTimeout(resolve, 250))
+                    ]);
                 }
 
-                if (mlDetectorRef.current) {
+                // If ML is failed/disabled/not ready: skip ML path immediately
+                if (mlStatusRef.current === 'ready' && mlDetectorRef.current) {
                     log('SCAN', 'ML Fallback: Running detection...');
 
                     try {
@@ -396,9 +412,13 @@ export default function Home() {
         setBatchResults([]);
         setStatus(`Processing ${files.length} files...`);
 
-        // If ML is enabled but not ready, warn/wait once
-        if (ENABLE_ML_DETECTION && !mlDetectorRef.current && !mlLoaded) {
-            setStatus('Waiting for ML model to load before batch...');
+        // If ML is enabled and still loading, wait ONCE (up to 10s) before batch.
+        if (ENABLE_ML_DETECTION && mlStatusRef.current === 'loading' && mlInitPromiseRef.current) {
+            setStatus('Waiting for ML model to load before batch (up to 10s)...');
+            await Promise.race([
+                mlInitPromiseRef.current,
+                new Promise((resolve) => setTimeout(resolve, 10000))
+            ]);
         }
 
         const results = [];
