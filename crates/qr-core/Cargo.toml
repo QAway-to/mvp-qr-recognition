@@ -24,6 +24,7 @@ anyhow.workspace = true
 log.workspace = true
 nalgebra = "0.34.1"
 
+
 [dev-dependencies]
 criterion = "0.5"
 qrcode = "0.12"

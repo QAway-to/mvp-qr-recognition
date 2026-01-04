@@ -8,6 +8,7 @@ use rxing::qrcode::QRCodeReader;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
+
 /// Ошибки декодирования
 #[derive(Error, Debug)]
 pub enum DecodeError {
@@ -156,7 +157,35 @@ impl QRDecoder {
             }
         }
 
-        // 5. Multi-Threshold Fallback (V16)
+
+
+        // 5. Rotation Fallback (V18)
+        // Если изображение повернуто под экзотическим углом (например 45 градусов),
+        // стандартные сканеры могут не справиться. Мы поворачиваем изображение, чтобы выровнять QR.
+        // Пробуем 45, 30, 60 градусов.
+        // 5. Rotation Fallback (V18)
+        // Если изображение повернуто под экзотическим углом (например 45 градусов),
+        // стандартные сканеры могут не справиться. Мы поворачиваем изображение, чтобы выровнять QR.
+        // Пробуем 45, 30, 60 градусов (и отрицательные).
+        log::info!("FALLBACK: Trying Rotation (30, 45, 60)...");
+        let angles = [30.0, 45.0, 60.0];
+        
+        for angle in angles {
+            // Try +angle
+            let rotated = self.rotate_image(img, angle);
+            
+            // Try Standard on rotated
+            if let Ok(result) = self.decode_with_rqrr(&rotated) {
+                log::info!("SUCCESS: Rotation ({} deg) + RQRR worked!", angle);
+                return Ok(result);
+            }
+            if let Ok(result) = self.decode_with_rxing(&rotated, true) {
+                log::info!("SUCCESS: Rotation ({} deg) + RXING worked!", angle);
+                return Ok(result);
+            }
+        }
+
+        // 6. Multi-Threshold Fallback (V16)
         // Пробуем несколько порогов бинаризации, включая автоматический (Otsu).
         let otsu_threshold = self.calculate_otsu_threshold(img);
         log::info!("FALLBACK: Trying Multi-Threshold (Otsu={}, 64, 96, 128, 160, 192)...", otsu_threshold);
@@ -175,7 +204,7 @@ impl QRDecoder {
             }
         }
 
-        // 6. Downscale Fallback (V16)
+        // 7. Downscale Fallback (V16)
         if img.width() > 400 || img.height() > 400 {
             log::info!("FALLBACK: Trying Downscale (50%)...");
             let downscaled = self.downscale_image(img, 2);
@@ -205,6 +234,55 @@ impl QRDecoder {
         image::imageops::overlay(&mut padded, img, padding as i64, padding as i64);
         
         padded
+    }
+
+
+    // ... (skipping to function definition)
+
+    /// Поворачивает изображение на заданный угол (в градусах) с изменением размера холста,
+    /// чтобы углы не обрезались. Заполняет фон белым (Quiet Zone).
+    fn rotate_image(&self, img: &GrayImage, angle_degrees: f32) -> GrayImage {
+        let (w, h) = img.dimensions();
+        let rad = angle_degrees.to_radians();
+        let cos_a = rad.cos();
+        let sin_a = rad.sin();
+        
+        // Calculate new dimensions to fit the rotated image (Bounding Box)
+        let new_w = (w as f32 * cos_a.abs() + h as f32 * sin_a.abs()).ceil() as u32;
+        let new_h = (w as f32 * sin_a.abs() + h as f32 * cos_a.abs()).ceil() as u32;
+        
+        // Centers
+        let cx = w as f32 / 2.0;
+        let cy = h as f32 / 2.0;
+        let new_cx = new_w as f32 / 2.0;
+        let new_cy = new_h as f32 / 2.0;
+        
+        // Create new white image (Quiet Zone)
+        let mut new_img = GrayImage::from_pixel(new_w, new_h, image::Luma([255]));
+
+        for y in 0..new_h {
+            for x in 0..new_w {
+                // Shift to center
+                let dx = x as f32 - new_cx;
+                let dy = y as f32 - new_cy;
+                
+                // Rotate back (inverse transform)
+                // x_src = dx * cos + dy * sin
+                // y_src = -dx * sin + dy * cos
+                let src_x = dx * cos_a + dy * sin_a + cx;
+                let src_y = -dx * sin_a + dy * cos_a + cy;
+                
+                // Check bounds using Nearest Neighbor
+                if src_x >= 0.0 && src_x < (w as f32 - 0.5) && src_y >= 0.0 && src_y < (h as f32 - 0.5) {
+                    let sx = src_x.round() as u32;
+                    let sy = src_y.round() as u32;
+                    if sx < w && sy < h {
+                         new_img.put_pixel(x, y, *img.get_pixel(sx, sy));
+                    }
+                }
+            }
+        }
+        new_img
     }
 
     /// Предобработка: Растяжение контраста + Повышение резкости
