@@ -167,20 +167,38 @@ impl QRDecoder {
         // Если изображение повернуто под экзотическим углом (например 45 градусов),
         // стандартные сканеры могут не справиться. Мы поворачиваем изображение, чтобы выровнять QR.
         // Пробуем 45, 30, 60 градусов (и отрицательные).
-        log::info!("FALLBACK: Trying Rotation (30, 45, 60)...");
-        let angles = [30.0, 45.0, 60.0];
+        // 5. Rotation Fallback (V18)
+        // Если изображение повернуто под экзотическим углом (например 45 градусов),
+        // стандартные сканеры могут не справиться. Мы поворачиваем изображение, чтобы выровнять QR.
+        // Пробуем 30, 45, 60 градусов (и отрицательные).
+        log::info!("FALLBACK: Trying Rotation (±30, ±45, ±60)...");
+        let angles = [30.0, -30.0, 45.0, -45.0, 60.0, -60.0];
         
         for angle in angles {
-            // Try +angle
+            // Rotate
             let rotated = self.rotate_image(img, angle);
             
-            // Try Standard on rotated
-            if let Ok(result) = self.decode_with_rqrr(&rotated) {
-                log::info!("SUCCESS: Rotation ({} deg) + RQRR worked!", angle);
+            // Sharpen the rotated image (restore edges after interpolation blur)
+            let sharpened_rotated = self.apply_sharpen(&rotated);
+            
+            // 1. Try Standard on rotated & sharpened
+            if let Ok(result) = self.decode_with_rqrr(&sharpened_rotated) {
+                log::info!("SUCCESS: Rotation ({} deg) + Sharpen + RQRR worked!", angle);
                 return Ok(result);
             }
-            if let Ok(result) = self.decode_with_rxing(&rotated, true) {
-                log::info!("SUCCESS: Rotation ({} deg) + RXING worked!", angle);
+            if let Ok(result) = self.decode_with_rxing(&sharpened_rotated, true) {
+                log::info!("SUCCESS: Rotation ({} deg) + Sharpen + RXING worked!", angle);
+                return Ok(result);
+            }
+
+            // 2. Try Hard Threshold (128) on rotated (Fix aliasing/gray pixels)
+            let thresholded = self.apply_threshold(&sharpened_rotated, 128);
+            if let Ok(result) = self.decode_with_rqrr(&thresholded) {
+                log::info!("SUCCESS: Rotation ({} deg) + Threshold(128) + RQRR worked!", angle);
+                return Ok(result);
+            }
+            if let Ok(result) = self.decode_with_rxing(&thresholded, true) {
+                log::info!("SUCCESS: Rotation ({} deg) + Threshold(128) + RXING worked!", angle);
                 return Ok(result);
             }
         }
@@ -239,15 +257,15 @@ impl QRDecoder {
 
     // ... (skipping to function definition)
 
-    /// Поворачивает изображение на заданный угол (в градусах) с изменением размера холста,
-    /// чтобы углы не обрезались. Заполняет фон белым (Quiet Zone).
+    /// Поворачивает изображение на заданный угол (в градусах) с изменением размера холста.
+    /// Использует билинейную интерполяцию (Bilinear Interpolation) для улучшения качества.
     fn rotate_image(&self, img: &GrayImage, angle_degrees: f32) -> GrayImage {
         let (w, h) = img.dimensions();
         let rad = angle_degrees.to_radians();
         let cos_a = rad.cos();
         let sin_a = rad.sin();
         
-        // Calculate new dimensions to fit the rotated image (Bounding Box)
+        // Calculate new dimensions (Bounding Box)
         let new_w = (w as f32 * cos_a.abs() + h as f32 * sin_a.abs()).ceil() as u32;
         let new_h = (w as f32 * sin_a.abs() + h as f32 * cos_a.abs()).ceil() as u32;
         
@@ -260,24 +278,44 @@ impl QRDecoder {
         // Create new white image (Quiet Zone)
         let mut new_img = GrayImage::from_pixel(new_w, new_h, image::Luma([255]));
 
+        // Fast access to raw buffer (unsafe for speed, but staying safe for now)
+        // Using get_pixel is slow but safe.
+        
         for y in 0..new_h {
             for x in 0..new_w {
                 // Shift to center
                 let dx = x as f32 - new_cx;
                 let dy = y as f32 - new_cy;
                 
-                // Rotate back (inverse transform)
-                // x_src = dx * cos + dy * sin
-                // y_src = -dx * sin + dy * cos
+                // Inverse transform (Destination -> Source)
                 let src_x = dx * cos_a + dy * sin_a + cx;
                 let src_y = -dx * sin_a + dy * cos_a + cy;
                 
-                // Check bounds using Nearest Neighbor
-                if src_x >= 0.0 && src_x < (w as f32 - 0.5) && src_y >= 0.0 && src_y < (h as f32 - 0.5) {
-                    let sx = src_x.round() as u32;
-                    let sy = src_y.round() as u32;
-                    if sx < w && sy < h {
-                         new_img.put_pixel(x, y, *img.get_pixel(sx, sy));
+                // Bilinear Interpolation
+                if src_x >= 0.0 && src_x < (w as f32 - 1.0) && src_y >= 0.0 && src_y < (h as f32 - 1.0) {
+                    let x0 = src_x.floor() as u32;
+                    let y0 = src_y.floor() as u32;
+                    let x1 = x0 + 1;
+                    let y1 = y0 + 1;
+                    
+                    let wx = src_x - x0 as f32; // weight x
+                    let wy = src_y - y0 as f32; // weight y
+                    
+                    // Safety check for x1, y1 (though bounds check above should handle it)
+                    if x1 < w && y1 < h {
+                         let p00 = img.get_pixel(x0, y0).0[0] as f32;
+                         let p10 = img.get_pixel(x1, y0).0[0] as f32;
+                         let p01 = img.get_pixel(x0, y1).0[0] as f32;
+                         let p11 = img.get_pixel(x1, y1).0[0] as f32;
+                         
+                         // Interpolate X
+                         let top = p00 * (1.0 - wx) + p10 * wx;
+                         let bottom = p01 * (1.0 - wx) + p11 * wx;
+                         
+                         // Interpolate Y
+                         let final_val = top * (1.0 - wy) + bottom * wy;
+                         
+                         new_img.put_pixel(x, y, image::Luma([final_val as u8]));
                     }
                 }
             }
