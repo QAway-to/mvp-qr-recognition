@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import Head from 'next/head';
 import dynamic from 'next/dynamic';
+import jsQR from 'jsqr';
 
 // Global debug setup - hook console to capture Rust/WASM logs
 if (typeof window !== 'undefined') {
@@ -269,7 +270,15 @@ export default function Home() {
                                 cropCtx.drawImage(canvas, x, y, w, h, 0, 0, w, h);
                                 const cropData = cropCtx.getImageData(0, 0, w, h);
 
-                                // Scan the cropped region
+                                // Attempt 0: Try jsQR first on the crop (very robust)
+                                const jsQrCode = jsQR(cropData.data, w, h);
+                                if (jsQrCode) {
+                                    log('SCAN', `✅ jsQR found code: ${jsQrCode.data}`);
+                                    result = { qr_codes: [{ content: jsQrCode.data, content_type: "Text" }] };
+                                    break;
+                                }
+
+                                // Scan the cropped region with WASM
                                 let cropResult = scanner.scanImageData(cropData.data, w, h);
 
                                 // ROTATION RETRY: If ML found it but scanner failed, try rotating
@@ -304,6 +313,14 @@ export default function Home() {
                                         rotCtx.drawImage(cropCanvas, -w / 2, -h / 2);
 
                                         const rotData = rotCtx.getImageData(0, 0, nw, nh);
+
+                                        // Try jsQR on rotated image
+                                        const jsQrRot = jsQR(rotData.data, nw, nh);
+                                        if (jsQrRot) {
+                                            log('SCAN', `✅ jsQR found code in rotation (${angle}°): ${jsQrRot.data}`);
+                                            cropResult = { qr_codes: [{ content: jsQrRot.data, content_type: "Text" }] };
+                                            break;
+                                        }
 
                                         // DEBUG: Check center pixel
                                         const cx = Math.floor(nw / 2);
