@@ -123,19 +123,40 @@ impl QRDecoder {
             }
         }
 
-        // 4. Hard Thresholding (Hail Mary 128)
-        // В V14 добавление: если умные методы не сработали, пробуем тупую бинаризацию по среднему.
-        // Это помогает, когда гистограмма размыта, но информация есть.
-        log::info!("FALLBACK: Trying Hard Thresholding (128)...");
-        let thresholded = self.apply_threshold(img, 128);
-        if let Ok(result) = self.decode_with_rqrr(&thresholded) {
-            log::info!("SUCCESS: Hard Threshold (128) + RQRR worked!");
-            return Ok(result);
+        // 4. Multi-Threshold Fallback (V16)
+        // Пробуем несколько порогов бинаризации, включая автоматический (Otsu).
+        // Это критично для изображений с разным освещением.
+        let otsu_threshold = self.calculate_otsu_threshold(img);
+        log::info!("FALLBACK: Trying Multi-Threshold (Otsu={}, 64, 96, 128, 160, 192)...", otsu_threshold);
+        
+        // Сначала пробуем Otsu (наиболее вероятный), потом фиксированные пороги
+        let thresholds: [u8; 6] = [otsu_threshold, 64, 96, 128, 160, 192];
+        
+        for threshold in thresholds {
+            let thresholded = self.apply_threshold(img, threshold);
+            if let Ok(result) = self.decode_with_rqrr(&thresholded) {
+                log::info!("SUCCESS: Multi-Threshold ({}) + RQRR worked!", threshold);
+                return Ok(result);
+            }
+            if let Ok(result) = self.decode_with_rxing(&thresholded, true) {
+                log::info!("SUCCESS: Multi-Threshold ({}) + RXING worked!", threshold);
+                return Ok(result);
+            }
         }
-        // rxing на бинарном изображении
-        if let Ok(result) = self.decode_with_rxing(&thresholded, true) {
-            log::info!("SUCCESS: Hard Threshold (128) + RXING worked!");
-            return Ok(result);
+
+        // 5. Downscale Fallback (V16)
+        // Иногда уменьшение изображения сглаживает шум и помогает.
+        if img.width() > 400 || img.height() > 400 {
+            log::info!("FALLBACK: Trying Downscale (50%)...");
+            let downscaled = self.downscale_image(img, 2);
+            if let Ok(result) = self.decode_with_rqrr(&downscaled) {
+                log::info!("SUCCESS: Downscale + RQRR worked!");
+                return Ok(result);
+            }
+            if let Ok(result) = self.decode_with_rxing(&downscaled, true) {
+                log::info!("SUCCESS: Downscale + RXING worked!");
+                return Ok(result);
+            }
         }
         
         Err(DecodeError::NotFound)
@@ -213,6 +234,70 @@ impl QRDecoder {
         for (x, y, p) in img.enumerate_pixels() {
             let val = if p.0[0] < threshold { 0 } else { 255 };
             result.put_pixel(x, y, image::Luma([val]));
+        }
+        result
+    }
+
+    /// Вычисление порога по методу Otsu (минимизация внутриклассовой дисперсии)
+    fn calculate_otsu_threshold(&self, img: &GrayImage) -> u8 {
+        // Строим гистограмму
+        let mut histogram = [0u32; 256];
+        let total_pixels = (img.width() * img.height()) as f64;
+        
+        for p in img.pixels() {
+            histogram[p.0[0] as usize] += 1;
+        }
+
+        let mut sum: f64 = 0.0;
+        for (i, &count) in histogram.iter().enumerate() {
+            sum += i as f64 * count as f64;
+        }
+
+        let mut sum_b: f64 = 0.0;
+        let mut w_b: f64 = 0.0;
+        let mut max_variance: f64 = 0.0;
+        let mut threshold: u8 = 128; // Default fallback
+
+        for (t, &count) in histogram.iter().enumerate() {
+            w_b += count as f64;
+            if w_b == 0.0 { continue; }
+            
+            let w_f = total_pixels - w_b;
+            if w_f == 0.0 { break; }
+
+            sum_b += t as f64 * count as f64;
+            
+            let m_b = sum_b / w_b;
+            let m_f = (sum - sum_b) / w_f;
+            
+            let variance = w_b * w_f * (m_b - m_f) * (m_b - m_f);
+            
+            if variance > max_variance {
+                max_variance = variance;
+                threshold = t as u8;
+            }
+        }
+        
+        threshold
+    }
+
+    /// Уменьшение изображения в заданное число раз (простое усреднение)
+    fn downscale_image(&self, img: &GrayImage, factor: u32) -> GrayImage {
+        let new_width = img.width() / factor;
+        let new_height = img.height() / factor;
+        let mut result = GrayImage::new(new_width, new_height);
+
+        for y in 0..new_height {
+            for x in 0..new_width {
+                let mut sum: u32 = 0;
+                for dy in 0..factor {
+                    for dx in 0..factor {
+                        sum += img.get_pixel(x * factor + dx, y * factor + dy).0[0] as u32;
+                    }
+                }
+                let avg = (sum / (factor * factor)) as u8;
+                result.put_pixel(x, y, image::Luma([avg]));
+            }
         }
         result
     }

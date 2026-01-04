@@ -23,82 +23,12 @@ async function loadWasm() {
 }
 
 export default async function handler(req, res) {
-    // Handle GET for health check or server-side file scan
+    // Handle GET for health check / simple log access (empty)
     if (req.method === 'GET') {
-        const { file, list } = req.query;
-
-        // List available files
-        if (list) {
-            const fs = require('fs');
-            const path = require('path');
-            const dir = path.join(process.cwd(), 'generated_dataset');
-            try {
-                const files = fs.readdirSync(dir);
-                return res.status(200).json({ files });
-            } catch (e) {
-                return res.status(500).json({ error: 'Failed to list files', details: e.message });
-            }
-        }
-
-        // Scan specific file
-        if (file) {
-            const wasm = await loadWasm();
-            const logs = [];
-            const originalLog = console.log;
-            const originalInfo = console.info;
-            const originalWarn = console.warn;
-            const originalError = console.error;
-
-            const capture = (...args) => {
-                logs.push({
-                    t: new Date().toISOString(),
-                    cat: 'SERVER_LOG',
-                    msg: args.map(a => (typeof a === 'object' ? JSON.stringify(a) : String(a))).join(' ')
-                });
-                // Optional: still log to real console
-                // originalLog.apply(console, args); 
-            };
-
-            console.log = capture;
-            console.info = capture;
-            console.warn = capture;
-            console.error = capture;
-
-            try {
-                const fs = require('fs');
-                const path = require('path');
-                const filePath = path.join(process.cwd(), 'generated_dataset', file);
-
-                if (!fs.existsSync(filePath)) {
-                    return res.status(404).json({ error: 'File not found', filePath });
-                }
-
-                const buffer = fs.readFileSync(filePath);
-                const bytes = new Uint8Array(buffer);
-
-                const scanner = new wasm.WasmQRScanner();
-                const result = scanner.scan_image(bytes);
-
-                return res.status(200).json({
-                    file,
-                    result,
-                    logs
-                });
-
-            } catch (e) {
-                return res.status(500).json({ error: 'Scan failed', logs, details: e.toString() });
-            } finally {
-                console.log = originalLog;
-                console.info = originalInfo;
-                console.warn = originalWarn;
-                console.error = originalError;
-            }
-        }
-
         return res.status(200).json({
             status: 'ready',
             version: 'V15',
-            logs: ['Server is ready. Use ?file=filename.png to scan server-side files.']
+            logs: ['Server is ready. Send POST with file to scan.']
         });
     }
 

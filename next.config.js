@@ -5,11 +5,6 @@ const path = require("path");
 /** @type {import('next').NextConfig} */
 const nextConfig = {
     reactStrictMode: true,
-    experimental: {
-        outputFileTracingIncludes: {
-            '/api/scan': ['./lib/pkg-node/**/*', './generated_dataset/**/*'],
-        },
-    },
     // Enable WASM support
     webpack: (config, { isServer }) => {
         config.experiments = {
