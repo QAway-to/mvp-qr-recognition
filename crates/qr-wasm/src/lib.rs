@@ -8,9 +8,10 @@ use serde_wasm_bindgen;
 
 /// Инициализация panic hook для отладки
 #[wasm_bindgen(start)]
-pub fn init() {
+pub fn start() {
     console_error_panic_hook::set_once();
-    console_log::init_with_level(log::Level::Warn).ok();
+    console_log::init_with_level(log::Level::Info).expect("error initializing logger");
+    log::info!("WASM VERSION: DEBUG_RQRR_V3");
     log::info!("QR Scanner WASM module initialized");
 }
 
