@@ -9,7 +9,7 @@ description = "WebAssembly bindings for QR code recognition"
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-qr-core = { path = "../qr-core" }
+qr-core = { path = "../qr-core", default-features = false }
 image.workspace = true
 wasm-bindgen.workspace = true
 js-sys.workspace = true
@@ -20,6 +20,7 @@ serde.workspace = true
 serde_json.workspace = true
 serde-wasm-bindgen = "0.6"
 log.workspace = true
+chrono = { version = "0.4", features = ["wasmbind"] }
 
 [dev-dependencies]
 wasm-bindgen-test = "0.3"

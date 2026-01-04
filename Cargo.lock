@@ -342,7 +342,9 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "145052bdd345b87320e369255277e3fb5152762ad123a901ef5c262dd38fe8d2"
 dependencies = [
  "iana-time-zone",
+ "js-sys",
  "num-traits",
+ "wasm-bindgen",
  "windows-link",
 ]
 
@@ -1132,24 +1134,6 @@ dependencies = [
  "ab_glyph",
  "approx",
  "conv",
- "getrandom 0.2.16",
- "image 0.25.9",
- "itertools 0.12.1",
- "nalgebra 0.32.6",
- "num",
- "rand 0.8.5",
- "rand_distr",
- "rayon",
-]
-
-[[package]]
-name = "imageproc"
-version = "0.25.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2393fb7808960751a52e8a154f67e7dd3f8a2ef9bd80d1553078a7b4e8ed3f0d"
-dependencies = [
- "ab_glyph",
- "approx",
  "getrandom 0.2.16",
  "image 0.25.9",
  "itertools 0.12.1",
@@ -1981,7 +1965,7 @@ dependencies = [
  "anyhow",
  "criterion",
  "image 0.25.9",
- "imageproc 0.24.0",
+ "imageproc",
  "log",
  "nalgebra 0.34.1",
  "qrcode",
@@ -2000,6 +1984,7 @@ dependencies = [
 name = "qr-wasm"
 version = "0.1.0"
 dependencies = [
+ "chrono",
  "console_error_panic_hook",
  "console_log",
  "image 0.25.9",
@@ -2298,8 +2283,6 @@ dependencies = [
  "codepage-437",
  "encoding",
  "fancy-regex",
- "image 0.25.9",
- "imageproc 0.25.0",
  "multimap",
  "num",
  "once_cell",

@@ -99,6 +99,7 @@ impl QRDecoder {
     
     /// Декодирование через rxing
     fn decode_with_rxing(&self, img: &GrayImage) -> Result<DecodedQR, DecodeError> {
+        log::info!("RXING: Starting decode on {}x{} image", img.width(), img.height());
         let (width, height) = img.dimensions();
         
         // Конвертируем grayscale в packed ARGB u32 формат для rxing
@@ -136,6 +137,7 @@ impl QRDecoder {
         
         match reader.decode_with_hints(&mut bitmap, &hints) {
             Ok(result) => {
+                log::info!("RXING: Decode success!");
                 Ok(DecodedQR {
                     content: result.getText().to_string(),
                     error_correction: ErrorCorrectionLevel::Unknown,
@@ -143,8 +145,14 @@ impl QRDecoder {
                     encoding: format!("{:?}", result.getBarcodeFormat()),
                 })
             }
-            Err(Exceptions::NotFoundException(_)) => Err(DecodeError::NotFound),
-            Err(e) => Err(DecodeError::DecodeFailed(e.to_string())),
+            Err(Exceptions::NotFoundException(_)) => {
+                log::info!("RXING: Not found");
+                Err(DecodeError::NotFound)
+            },
+            Err(e) => {
+                log::info!("RXING: Decode failed: {}", e);
+                Err(DecodeError::DecodeFailed(e.to_string()))
+            },
         }
     }
     

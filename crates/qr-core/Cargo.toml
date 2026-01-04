@@ -5,14 +5,18 @@ edition.workspace = true
 license.workspace = true
 description = "Core QR code recognition library with preprocessing and decoding"
 
+[features]
+default = ["ml"]
+ml = ["dep:tract-core", "dep:tract-onnx"]
+
 [dependencies]
 image.workspace = true
 imageproc.workspace = true
-rxing = { workspace = true, default-features = false }
+rxing = { version = "0.6", default-features = false }
 rqrr.workspace = true
 urlencoding.workspace = true
-tract-core = "0.21.7"
-tract-onnx = "0.21.7"
+tract-core = { version = "0.21.7", optional = true }
+tract-onnx = { version = "0.21.7", optional = true }
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true

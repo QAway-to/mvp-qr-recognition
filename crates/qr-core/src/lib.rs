@@ -10,6 +10,7 @@ pub mod preprocessing;
 pub mod detection;
 pub mod decoding;
 pub mod payment;
+#[cfg(feature = "ml")]
 pub mod ml_detection;
 pub mod emv;
 pub mod geometry;
@@ -18,6 +19,7 @@ pub use preprocessing::{ImageProcessor, ProcessingConfig};
 pub use detection::{QRDetector, DetectedQR, DetectorConfig};
 pub use decoding::{QRDecoder, DecodedQR, DecodeError};
 pub use payment::{PaymentParser, PaymentInfo, PaymentFormat};
+#[cfg(feature = "ml")]
 pub use ml_detection::OnnxDetector;
 pub use emv::EmvData;
 
@@ -156,6 +158,7 @@ impl QRScanner {
     }
 
     /// Установка ML детектора
+    #[cfg(feature = "ml")]
     pub fn set_ml_detector(&mut self, detector: OnnxDetector) {
         self.detector.set_ml_detector(detector);
     }

@@ -11,7 +11,7 @@ use serde_wasm_bindgen;
 pub fn start() {
     console_error_panic_hook::set_once();
     console_log::init_with_level(log::Level::Info).expect("error initializing logger");
-    log::info!("WASM VERSION: RXING_DIRECT_V5 (QRCodeReader only)");
+    log::info!("WASM VERSION: RXING_NO_ML_V9");
     log::info!("QR Scanner WASM module initialized");
 }
 
@@ -119,17 +119,7 @@ impl WasmQRScanner {
         }
     }
 
-    /// Загрузка ML модели (ONNX)
-    /// 
-    /// @param model_data - Uint8Array с байтами модели (.onnx)
-    #[wasm_bindgen(js_name = loadModel)]
-    pub fn load_model(&mut self, model_data: &[u8]) -> Result<(), JsError> {
-        let detector = qr_core::OnnxDetector::load(model_data)
-           .map_err(|e| JsError::new(&e.to_string()))?;
-        
-        self.scanner.set_ml_detector(detector);
-        Ok(())
-    }
+
     
     /// Конвертация RGBA в Grayscale
     fn rgba_to_gray(&self, rgba: &[u8], width: u32, height: u32) -> Vec<u8> {

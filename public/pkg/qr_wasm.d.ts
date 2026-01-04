@@ -27,12 +27,6 @@ export class WasmQRScanner {
   free(): void;
   [Symbol.dispose](): void;
   /**
-   * Загрузка ML модели (ONNX)
-   * 
-   * @param model_data - Uint8Array с байтами модели (.onnx)
-   */
-  loadModel(model_data: Uint8Array): void;
-  /**
    * Сканирование изображения из байтов (PNG, JPEG)
    * 
    * @param image_data - Uint8Array с данными изображения
@@ -88,7 +82,6 @@ export interface InitOutput {
   readonly quickScan: (a: number, b: number) => [number, number, number];
   readonly start: () => void;
   readonly version: () => [number, number];
-  readonly wasmqrscanner_loadModel: (a: number, b: number, c: number) => [number, number];
   readonly wasmqrscanner_new: () => number;
   readonly wasmqrscanner_scanForPayment: (a: number, b: number, c: number) => [number, number, number];
   readonly wasmqrscanner_scanImage: (a: number, b: number, c: number) => [number, number, number];
@@ -96,10 +89,8 @@ export interface InitOutput {
   readonly wasmqrscanner_withConfig: (a: number, b: number, c: number, d: number, e: number) => number;
   readonly __wbindgen_malloc: (a: number, b: number) => number;
   readonly __wbindgen_realloc: (a: number, b: number, c: number, d: number) => number;
-  readonly __wbindgen_exn_store: (a: number) => void;
-  readonly __externref_table_alloc: () => number;
-  readonly __wbindgen_externrefs: WebAssembly.Table;
   readonly __wbindgen_free: (a: number, b: number, c: number) => void;
+  readonly __wbindgen_externrefs: WebAssembly.Table;
   readonly __externref_table_dealloc: (a: number) => void;
   readonly __wbindgen_start: () => void;
 }

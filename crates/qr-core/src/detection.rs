@@ -4,6 +4,7 @@
 
 use image::{GrayImage, Luma};
 use serde::{Deserialize, Serialize};
+#[cfg(feature = "ml")]
 use crate::ml_detection::OnnxDetector;
 
 /// Конфигурация детектора
@@ -54,16 +55,22 @@ struct FinderPattern {
 /// Детектор QR-кодов
 pub struct QRDetector {
     config: DetectorConfig,
+    #[cfg(feature = "ml")]
     ml_detector: Option<OnnxDetector>,
 }
 
 impl QRDetector {
     /// Создание детектора
     pub fn new(config: DetectorConfig) -> Self {
-        Self { config, ml_detector: None }
+        Self { 
+            config, 
+            #[cfg(feature = "ml")]
+            ml_detector: None 
+        }
     }
 
     /// Установка ML детектора
+    #[cfg(feature = "ml")]
     pub fn set_ml_detector(&mut self, detector: OnnxDetector) {
         self.ml_detector = Some(detector);
     }
@@ -71,6 +78,7 @@ impl QRDetector {
     /// Обнаружение всех QR-кодов на изображении
     pub fn detect(&self, img: &GrayImage) -> Vec<DetectedQR> {
         // 0. Если есть ML-детектор, пробуем его сначала (или комбинируем)
+        #[cfg(feature = "ml")]
         if let Some(ml) = &self.ml_detector {
            if let Ok(ml_results) = ml.detect(img) {
                if !ml_results.is_empty() {
