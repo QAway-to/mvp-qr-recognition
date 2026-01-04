@@ -237,8 +237,8 @@ export default function Home() {
 
                             // For each detection, crop and re-scan
                             for (const det of detections) {
-                                // Add padding (10%)
-                                const padding = Math.max(det.width, det.height) * 0.1;
+                                // Add padding (20% to ensure quiet zone)
+                                const padding = Math.max(det.width, det.height) * 0.2;
                                 const x = Math.max(0, det.x - padding);
                                 const y = Math.max(0, det.y - padding);
                                 const w = Math.min(bitmap.width - x, det.width + padding * 2);
@@ -303,39 +303,38 @@ export default function Home() {
                                             break;
                                         }
 
-                                        // Attempt 2: High-contrast binarization
-                                        // Many scanners fail on gray/aliased edges from rotation.
-                                        // Let's force black/white.
-                                        const pixels = rotData.data;
-                                        for (let i = 0; i < pixels.length; i += 4) {
-                                            // Simple grayscale
-                                            const gray = (pixels[i] + pixels[i + 1] + pixels[i + 2]) / 3;
-                                            // Threshold (128 is standard, could adjust)
-                                            const val = gray < 128 ? 0 : 255;
-                                            pixels[i] = pixels[i + 1] = pixels[i + 2] = val;
-                                            // Keep alpha
+                                        // Attempt 2: Multi-threshold Binarization
+                                        // Try different thresholds to handle lighting variations
+                                        const thresholds = [80, 128, 160];
+
+                                        for (const threshold of thresholds) {
+                                            // Create a copy of the pixel data for this threshold pass
+                                            // We must copy because we are modifying the buffer in place
+                                            const pixels = new Uint8ClampedArray(rotData.data);
+
+                                            for (let i = 0; i < pixels.length; i += 4) {
+                                                // Simple grayscale
+                                                const gray = (pixels[i] + pixels[i + 1] + pixels[i + 2]) / 3;
+                                                const val = gray < threshold ? 0 : 255;
+                                                pixels[i] = pixels[i + 1] = pixels[i + 2] = val;
+                                                // Keep alpha
+                                            }
+
+                                            rotResult = scanner.scanImageData(pixels, nw, nh);
+                                            if (rotResult?.qr_codes?.length > 0) {
+                                                log('SCAN', `✅ Success with ${angle}° rotation (binarized @ ${threshold})!`);
+                                                cropResult = rotResult;
+                                                break;
+                                            }
                                         }
 
-                                        rotResult = scanner.scanImageData(pixels, nw, nh);
-                                        if (rotResult?.qr_codes?.length > 0) {
-                                            log('SCAN', `✅ Success with ${angle}° rotation (binarized)!`);
-                                            cropResult = rotResult;
-                                            break;
-                                        }
+                                        if (cropResult?.qr_codes?.length > 0) break;
 
                                         // Continue loop if failed...
                                         if (!cropResult?.qr_codes?.length && !window.debugDataUrlLogged) {
                                             log('SCAN', `DEBUG IMAGE (Rotated ${angle}°): ${rotCanvas.toDataURL()}`);
                                             window.debugDataUrlLogged = true; // Log only once to avoid spam
                                         } else if (!cropResult?.qr_codes?.length) {
-                                            log('SCAN', `❌ Failed with ${angle}° rotation`);
-                                        }
-
-                                        if (rotResult?.qr_codes?.length > 0) {
-                                            log('SCAN', `✅ Success with ${angle}° rotation!`);
-                                            cropResult = rotResult;
-                                            break;
-                                        } else {
                                             log('SCAN', `❌ Failed with ${angle}° rotation`);
                                         }
                                     }
