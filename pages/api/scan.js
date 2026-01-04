@@ -23,6 +23,15 @@ async function loadWasm() {
 }
 
 export default async function handler(req, res) {
+    // Handle GET for health check / simple log access (empty)
+    if (req.method === 'GET') {
+        return res.status(200).json({
+            status: 'ready',
+            version: 'V15',
+            logs: ['Server is ready. Send POST with file to scan.']
+        });
+    }
+
     if (req.method !== 'POST') {
         return res.status(405).json({ error: 'Method not allowed' });
     }
