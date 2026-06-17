@@ -34,6 +34,23 @@ function log(cat, msg, data = null) {
     console.info(`[${cat}] ${msg}`, data || '');
 }
 
+async function flushLogs() {
+    if (typeof window === 'undefined') return;
+    try {
+        await fetch('/api/logs', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                logs: window.__QR_DEBUG_LOGS,
+                clientInfo: {
+                    ua: navigator.userAgent,
+                    ts: new Date().toISOString(),
+                }
+            })
+        });
+    } catch (_) {}
+}
+
 export default function Home() {
     // ===== ML DETECTION TOGGLE =====
     // Set to true to enable ML-based QR detection (JS onnxruntime-web, ~300ms)
@@ -105,6 +122,7 @@ export default function Home() {
                 setWasmReady(true);
                 setStatus('Ready');
                 log('WASM', 'Ready!');
+                flushLogs();
 
                 // Try to load ML model using JS onnxruntime-web (only if enabled)
                 if (ENABLE_ML_DETECTION) {
@@ -151,6 +169,7 @@ export default function Home() {
         } catch (error) {
             log('WASM', 'ERROR', { name: error.name, message: error.message, stack: error.stack });
             setStatus('Error: ' + error.message);
+            flushLogs();
         }
     };
 
