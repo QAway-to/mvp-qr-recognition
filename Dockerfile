@@ -1,5 +1,5 @@
 # ── Stage 1: Build WASM + Next.js ────────────────────────────────────────────
-FROM rust:1.85-slim AS builder
+FROM rust:1.87-slim AS builder
 
 # System deps
 RUN apt-get update && apt-get install -y \
