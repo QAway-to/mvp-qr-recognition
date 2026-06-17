@@ -1,0 +1,14 @@
+.git
+.next
+node_modules
+crates/qr-wasm/pkg
+crates/qr-wasm/pkg-node
+crates/qr-wasm/public
+generated_dataset
+training
+wechat_models
+temp_weights
+*.ipynb
+*.py
+*.md
+.env*
