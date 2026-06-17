@@ -1,15 +1,14 @@
-﻿/target/
-/node_modules/
+﻿# Build outputs
+/target/
+/pkg/
 /.next/
+/node_modules/
+
+# Pre-built WASM (committed to repo — build locally with wasm-pack)
+!/public/pkg/
+
+# IDE
 /.gemini/
-
-# Logs
-*.log
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-
-# Editor directories
 .idea/
 .vscode/
 *.swp
@@ -17,9 +16,29 @@ yarn-error.log*
 .DS_Store
 Thumbs.db
 
-# Datasets and Training
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Datasets (large!)
 /dataset/
+/dataset_v3_local/
 /active_learning_dataset/
+/generated_dataset/
+/generated_obb_dataset/
+/generated_obb_dataset_v2/
+/validation_batch/
+/validation_batch_2/
+/validation_batch_3/
+/validation_results/
+/validation_results_batch/
+/validation_results_batch_2/
+/validation_results_batch_3/
+/validation_results_epoch13/
+
+# Training outputs
 /training/yolo-2/
 /training/qr-code-2/
 /training/runs/
@@ -27,20 +46,34 @@ Thumbs.db
 /training/__pycache__/
 /training/*.pt
 /training/*.onnx
+/runs/
+/results/
+/yolo-2/
+/qr-code-2/
+
+# Models (large!)
+*.pt
+*.onnx
+# Exception: Keep the deployed ONNX model for web
+!public/model.onnx
 
 # Rust
 **/*.rs.bk
 
-# Large Media & Debug
+# Large Media
 *.png
 *.jpg
 *.jpeg
-debug_*.png
-test_output.txt
-benchmark_results*.txt
 
-# Models
-*.pt
-*.onnx
-# Exception: Keep the deployed model
-!public/model.onnx
+# Python
+__pycache__/
+*.pyc
+
+# Zip files
+*.zip
+
+# Benchmark results
+bench_*.txt
+benchmark_results*.txt
+test_output.txt
+*_output*.txt
