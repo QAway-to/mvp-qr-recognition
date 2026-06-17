@@ -1,15 +1,46 @@
-﻿/target
-/node_modules
-/.next
+﻿/target/
+/node_modules/
+/.next/
+/.gemini/
 
+# Logs
 *.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Editor directories
+.idea/
+.vscode/
 *.swp
 *.swo
-
 .DS_Store
 Thumbs.db
 
-.idea/
-.vscode/
+# Datasets and Training
+/dataset/
+/active_learning_dataset/
+/training/yolo-2/
+/training/qr-code-2/
+/training/runs/
+/training/results/
+/training/__pycache__/
+/training/*.pt
+/training/*.onnx
 
-temp_weights/
+# Rust
+**/*.rs.bk
+
+# Large Media & Debug
+*.png
+*.jpg
+*.jpeg
+debug_*.png
+test_output.txt
+benchmark_results*.txt
+
+# Models
+*.pt
+*.onnx
+# Exception: Keep the deployed model
+!public/model.onnx

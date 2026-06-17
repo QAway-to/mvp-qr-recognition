@@ -44,7 +44,8 @@ impl OnnxDetector {
 
         for y in 0..MODEL_SIZE {
             for x in 0..MODEL_SIZE {
-                let pixel = resized.get_pixel(x, y)[0] as f32 / 255.0;
+                // Normalization: Try 0-255 (Some models include normalization)
+                let pixel = resized.get_pixel(x, y)[0] as f32;
                 plane_r.push(pixel);
                 plane_g.push(pixel);
                 plane_b.push(pixel);
@@ -78,7 +79,7 @@ impl OnnxDetector {
         let num_anchors = shape[2];
         
         let mut detections = Vec::new();
-        let conf_threshold = 0.5;
+        let conf_threshold = 0.6;
 
         // Iterate over anchors
         for i in 0..num_anchors {
@@ -87,7 +88,10 @@ impl OnnxDetector {
             let mut best_class = 0;
             
             for c in 0..num_classes {
-                let score = output[[0, 4 + c, i]];
+                let raw_score = output[[0, 4 + c, i]];
+                // Apply sigmoid to clamp to 0.0 - 1.0
+                let score = 1.0 / (1.0 + (-raw_score).exp());
+                
                 if score > max_score {
                     max_score = score;
                     best_class = c;
@@ -105,11 +109,21 @@ impl OnnxDetector {
                 let x2 = cx + w / 2.0;
                 let y2 = cy + h / 2.0;
                 
-                detections.push(BBox { x1, y1, x2, y2, score: max_score, class: best_class });
+                // Filter: Only accept Class 1 (QR Code) - Piero2411 model
+                if best_class == 1 {
+                    detections.push(BBox { x1, y1, x2, y2, score: max_score, class: best_class });
+                }
             }
         }
         
         log::info!("OnnxDetector: Raw detections > {}: {}", conf_threshold, detections.len());
+        
+        // Debug: Print class counts
+        let mut class_counts = std::collections::HashMap::new();
+        for d in &detections {
+            *class_counts.entry(d.class).or_insert(0) += 1;
+        }
+        log::info!("OnnxDetector: Class Distribution: {:?}", class_counts);
 
         // NMS
         let kept_boxes = nms(&detections, 0.45);

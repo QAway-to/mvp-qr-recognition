@@ -484,111 +484,161 @@ export default function Home() {
         return () => stopCamera();
     }, []);
 
+    const mlBadgeClass = mlStatus === 'ready' ? 'ready' : mlStatus === 'loading' ? 'loading' : mlStatus === 'failed' ? 'failed' : '';
+    const statusPillClass = !wasmReady ? 'loading' : status.startsWith('Error') ? 'error' : 'ready';
+
     return (
         <>
             <Head>
                 <title>QR Scanner</title>
                 <meta name="viewport" content="width=device-width, initial-scale=1" />
+                <link rel="preconnect" href="https://fonts.googleapis.com" />
+                <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
+                <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet" />
             </Head>
 
-            <main className="container">
-                <h1>📱 QR Scanner</h1>
-                <p className="subtitle">WASM-powered QR code recognition</p>
-
-                <div className="mode-toggle">
-                    <button className={mode === 'camera' ? 'active' : ''} onClick={() => { setMode('camera'); stopCamera(); }}>
-                        📷 Camera
-                    </button>
-                    <button className={mode === 'upload' ? 'active' : ''} onClick={() => { setMode('upload'); stopCamera(); }}>
-                        📁 Upload
-                    </button>
-                    <button className={mode === 'batch' ? 'active' : ''} onClick={() => { setMode('batch'); stopCamera(); }}>
-                        📚 Batch Test
-                    </button>
-                </div>
-
-                {mode === 'camera' && (
-                    <div className="camera-section">
-                        <video ref={videoRef} autoPlay playsInline muted />
-                        <canvas ref={canvasRef} style={{ display: 'none' }} />
-                        <div className="controls">
-                            {!scanning ? (
-                                <button onClick={startCamera} disabled={!wasmReady} className="btn-primary">Start Camera</button>
-                            ) : (
-                                <button onClick={stopCamera} className="btn-secondary">Stop Camera</button>
-                            )}
-                        </div>
+            <div className="layout">
+                <header className="topbar">
+                    <div className="topbar-brand">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                            <rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/>
+                            <rect x="3" y="14" width="7" height="7"/><path d="M14 14h3v3h-3zM17 17h3v3h-3zM14 20h3"/>
+                        </svg>
+                        QR Scanner
                     </div>
-                )}
-
-                {mode === 'upload' && (
-                    <div className="upload-section">
-                        <label className="dropzone">
-                            <input type="file" accept="image/*" onChange={handleFileUpload} disabled={!wasmReady} />
-                            <span>📷 Click or drop SINGLE image here</span>
-                        </label>
-                    </div>
-                )}
-
-                {mode === 'batch' && (
-                    <div className="batch-section">
-                        <label className="dropzone">
-                            <input type="file" accept="image/*" multiple onChange={handleBatchUpload} disabled={!wasmReady} />
-                            <span>📚 Select MULTIPLE files for Mass Test</span>
-                        </label>
-
-                        {batchResults.length > 0 && (
-                            <div className="batch-results">
-                                <table style={{ width: '100%', marginTop: '20px', borderCollapse: 'collapse' }}>
-                                    <thead>
-                                        <tr style={{ textAlign: 'left', borderBottom: '1px solid #333' }}>
-                                            <th>File</th>
-                                            <th>Status</th>
-                                            <th>Time (ms)</th>
-                                            <th>Content</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        {batchResults.map((res, i) => (
-                                            <tr key={i} style={{ borderBottom: '1px solid #222' }}>
-                                                <td>{res.name}</td>
-                                                <td>{res.status}</td>
-                                                <td>{res.time}</td>
-                                                <td style={{ maxWidth: '200px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{res.content}</td>
-                                            </tr>
-                                        ))}
-                                    </tbody>
-                                </table>
-                            </div>
+                    <div className="topbar-meta">
+                        {mlStatus !== 'disabled' && (
+                            <span className={`ml-badge ${mlBadgeClass}`}>
+                                ML {mlStatus === 'ready' ? 'ready' : mlStatus === 'loading' ? 'loading…' : 'off'}
+                            </span>
                         )}
+                        <span className={`status-pill ${statusPillClass}`}>
+                            <span className={`status-dot ${!wasmReady ? 'pulse' : ''}`} />
+                            {status}
+                        </span>
                     </div>
-                )}
+                </header>
 
-                <div className="status">
-                    Status: <strong>{status}</strong>
-                    <button onClick={downloadLogs} style={{ marginLeft: '10px', fontSize: '0.8rem', padding: '4px 8px' }}>
-                        📥 Logs
-                    </button>
-                </div>
+                <main className="main">
+                    <div className="tabs">
+                        <button className={`tab ${mode === 'camera' ? 'active' : ''}`} onClick={() => { setMode('camera'); stopCamera(); }}>
+                            Camera
+                        </button>
+                        <button className={`tab ${mode === 'upload' ? 'active' : ''}`} onClick={() => { setMode('upload'); stopCamera(); }}>
+                            Upload
+                        </button>
+                        <button className={`tab ${mode === 'batch' ? 'active' : ''}`} onClick={() => { setMode('batch'); stopCamera(); }}>
+                            Batch Test
+                        </button>
+                    </div>
 
-                {results.length > 0 && (
-                    <div className="results">
-                        <h3>Results</h3>
-                        {results.map((qr, idx) => (
-                            <div key={idx} className={`result-card ${qr.content_type === 'Payment' ? 'payment' : ''}`}>
-                                <div className="result-type">{qr.content_type}</div>
-                                <div className="result-content">{qr.content}</div>
-                                {qr.payment && (
-                                    <div className="payment-info">
-                                        {qr.payment.payee_name && <div>Recipient: {qr.payment.payee_name}</div>}
-                                        {qr.payment.amount && <div>Amount: {qr.payment.amount} {qr.payment.currency}</div>}
-                                    </div>
+                    <canvas ref={canvasRef} style={{ display: 'none' }} />
+
+                    {mode === 'camera' && (
+                        <div className="card camera-section">
+                            <video ref={videoRef} autoPlay playsInline muted />
+                            <div className="controls">
+                                {!scanning ? (
+                                    <button onClick={startCamera} disabled={!wasmReady} className="btn btn-primary">
+                                        Start Camera
+                                    </button>
+                                ) : (
+                                    <button onClick={stopCamera} className="btn">
+                                        Stop Camera
+                                    </button>
                                 )}
                             </div>
-                        ))}
+                        </div>
+                    )}
+
+                    {mode === 'upload' && (
+                        <label className="dropzone">
+                            <input type="file" accept="image/*" onChange={handleFileUpload} disabled={!wasmReady} />
+                            <span className="dropzone-icon">
+                                <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+                                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/>
+                                </svg>
+                            </span>
+                            <span className="dropzone-label">Click or drop image here</span>
+                            <span className="dropzone-hint">PNG, JPG, WEBP — single file</span>
+                        </label>
+                    )}
+
+                    {mode === 'batch' && (
+                        <div>
+                            <label className="dropzone">
+                                <input type="file" accept="image/*" multiple onChange={handleBatchUpload} disabled={!wasmReady} />
+                                <span className="dropzone-icon">
+                                    <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+                                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/>
+                                    </svg>
+                                </span>
+                                <span className="dropzone-label">Select multiple files</span>
+                                <span className="dropzone-hint">Batch QR recognition test</span>
+                            </label>
+
+                            {batchResults.length > 0 && (
+                                <div className="batch-table-wrap">
+                                    <table className="batch-table">
+                                        <thead>
+                                            <tr>
+                                                <th>File</th>
+                                                <th>Status</th>
+                                                <th>ms</th>
+                                                <th>Content</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {batchResults.map((res, i) => {
+                                                const ok = res.status.includes('Found');
+                                                const err = res.status.includes('Error');
+                                                return (
+                                                    <tr key={i}>
+                                                        <td>{res.name}</td>
+                                                        <td className={ok ? 'badge-ok' : err ? 'badge-err' : 'badge-fail'}>
+                                                            {ok ? 'Found' : err ? 'Error' : 'No QR'}
+                                                        </td>
+                                                        <td>{res.time}</td>
+                                                        <td className="truncate">{res.content}</td>
+                                                    </tr>
+                                                );
+                                            })}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            )}
+                        </div>
+                    )}
+
+                    {results.length > 0 && (
+                        <div style={{ marginTop: '24px' }}>
+                            <div className="results-header">Results — {results.length} code{results.length > 1 ? 's' : ''} found</div>
+                            {results.map((qr, idx) => (
+                                <div key={idx} className={`result-card ${qr.content_type === 'Payment' ? 'payment' : ''}`}>
+                                    <div className="result-type">{qr.content_type || 'Text'}</div>
+                                    <div className="result-content">{qr.content}</div>
+                                    {qr.payment && (
+                                        <div className="payment-info">
+                                            {qr.payment.payee_name && (
+                                                <div className="payment-row">Recipient <span>{qr.payment.payee_name}</span></div>
+                                            )}
+                                            {qr.payment.amount && (
+                                                <div className="payment-row">Amount <span>{qr.payment.amount} {qr.payment.currency}</span></div>
+                                            )}
+                                        </div>
+                                    )}
+                                </div>
+                            ))}
+                        </div>
+                    )}
+
+                    <div style={{ marginTop: '32px', textAlign: 'right' }}>
+                        <button onClick={downloadLogs} className="btn" style={{ fontSize: '0.78rem' }}>
+                            Download logs
+                        </button>
                     </div>
-                )}
-            </main>
+                </main>
+            </div>
         </>
     );
 }
