@@ -13,6 +13,7 @@ pub mod payment;
 #[cfg(feature = "ml")]
 pub mod ml_detection;
 pub mod emv;
+pub mod emv_parser;
 pub mod geometry;
 
 pub use preprocessing::{ImageProcessor, ProcessingConfig};
@@ -21,7 +22,8 @@ pub use decoding::{QRDecoder, DecodedQR, DecodeError};
 pub use payment::{PaymentParser, PaymentInfo, PaymentFormat};
 #[cfg(feature = "ml")]
 pub use ml_detection::OnnxDetector;
-pub use emv::EmvData;
+// pub use emv::EmvData; // Deprecated?
+pub use emv_parser::{EmvData as EmvDataV19, parse_emv_qr};
 
 use image::GrayImage;
 use serde::{Deserialize, Serialize};
@@ -184,19 +186,22 @@ impl QRScanner {
         let processed = self.processor.process(gray);
         log::info!("Preprocessing done, resulting size: {:?}", processed.dimensions());
         
-        // Детекция QR-кодов
-        log::info!("Starting detection");
-        let detected = self.detector.detect(&processed);
-        log::info!("Detection done, found: {}", detected.len());
-        
-        // Декодирование каждого QR
         let mut qr_codes = Vec::new();
         let mut best_payment_score = 0.0f32;
         let mut best_payment_idx = None;
+
+        // --- Helper for decoding detections ---
+        // Warning: This updates qr_codes, best_payment_score, best_payment_idx.
+        // We can't easily make it a closure due to ownership, so we'll use a loop.
         
-        for (idx, detection) in detected.iter().enumerate() {
+        // 1. Initial Detection (0 degrees)
+        log::info!("Starting detection (0 deg)");
+        let detected_0 = self.detector.detect(&processed, None); // Standard threshold
+        log::info!("Detection (0 deg) done, found: {}", detected_0.len());
+        
+        // Decode 0 deg
+        for (idx, detection) in detected_0.iter().enumerate() {
             log::info!("Decoding detected QR #{}", idx);
-            // Пробуем декодировать
             match self.decoder.decode(&detection.image) {
                 Ok(decoded) => {
                     log::info!("Decoded successfully: {:?}", decoded.content);
@@ -207,11 +212,10 @@ impl QRScanner {
                         None
                     };
                     
-                    // Оценка релевантности для оплаты
                     let payment_score = self.payment_parser.relevance_score(&decoded.content);
                     if payment_score > best_payment_score {
                         best_payment_score = payment_score;
-                        best_payment_idx = Some(idx);
+                        best_payment_idx = Some(qr_codes.len()); // Use current len
                     }
                     
                     qr_codes.push(QRResult {
@@ -227,10 +231,77 @@ impl QRScanner {
                 }
             }
         }
-        
-        // Если не нашли QR через детектор, пробуем декодировать всё изображение напрямую
+
+        // 2. Rotation Fallback (V19)
+        // If we found nothing so far, try rotating 45 degrees.
+        // This handles cases where ML fails to detect rotated QRs OR ML detects them but decoder fails on rotated crop.
         if qr_codes.is_empty() {
-            log::info!("No QRs found via detection, trying full image decode");
+             log::info!("No codes found yet. Trying 45 degree rotation fallback...");
+             let rotated = geometry::rotate_image(&processed, 45.0);
+             let rotated_detected = self.detector.detect(&rotated, None);
+             log::info!("Detection (45 deg) done, found: {}", rotated_detected.len());
+             
+             let (w, h) = processed.dimensions();
+
+             for (idx, detection) in rotated_detected.iter().enumerate() {
+                // Determine Original BBox (approximate)
+                // We map the crop back.
+                // Note: The 'detection.image' is UPRIGHT (because we rotated the image 45 deg).
+                // So decoding it should trigger standard decoder success.
+                
+                match self.decoder.decode(&detection.image) {
+                    Ok(decoded) => {
+                        log::info!("Rotation Fallback: Decoded successfully: {:?}", decoded.content);
+                        
+                        // Map bbox/corners back to 0 deg frame
+                        let mut new_corners = [(0,0); 4];
+                        for (i, c) in detection.corners.iter().enumerate() {
+                            let (mx, my) = geometry::map_rotated_point_back(
+                                c.0 as f32, c.1 as f32, w, h, 45.0
+                            );
+                            new_corners[i] = (mx as u32, my as u32);
+                        }
+                        
+                        let xs: Vec<u32> = new_corners.iter().map(|c| c.0).collect();
+                        let ys: Vec<u32> = new_corners.iter().map(|c| c.1).collect();
+                        let min_x = *xs.iter().min().unwrap_or(&0);
+                        let max_x = *xs.iter().max().unwrap_or(&0);
+                        let min_y = *ys.iter().min().unwrap_or(&0);
+                        let max_y = *ys.iter().max().unwrap_or(&0);
+                        
+                        let mapped_bbox = [min_x, min_y, max_x - min_x, max_y - min_y];
+                        
+                        let content_type = ContentType::detect(&decoded.content);
+                        let payment = if content_type == ContentType::Payment {
+                            self.payment_parser.parse(&decoded.content)
+                        } else {
+                            None
+                        };
+                        
+                        let payment_score = self.payment_parser.relevance_score(&decoded.content);
+                        if payment_score > best_payment_score {
+                            best_payment_score = payment_score;
+                            best_payment_idx = Some(qr_codes.len());
+                        }
+                        
+                        qr_codes.push(QRResult {
+                            content: decoded.content,
+                            bbox: mapped_bbox,
+                            content_type,
+                            payment,
+                            confidence: detection.confidence,
+                        });
+                    }
+                    Err(e) => {
+                         log::debug!("Rotation Fallback: Failed to decode QR #{}: {}", idx, e);
+                    }
+                }
+             }
+        }
+        
+        // 3. Last Resort: Full Image Decode (if still empty)
+        if qr_codes.is_empty() {
+            log::info!("No QRs found via detection (0 or 45), trying full image decode");
             if let Ok(decoded) = self.decoder.decode(&processed) {
                 log::info!("Full image decode success: {:?}", decoded.content);
                 let content_type = ContentType::detect(&decoded.content);

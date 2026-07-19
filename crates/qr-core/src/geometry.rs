@@ -136,6 +136,86 @@ fn bilinear_sample(img: &GrayImage, x: f32, y: f32) -> u8 {
     (top * (1.0 - dy) + bottom * dy) as u8
 }
 
+
+/// Rotate image by angle (degrees) with canvas expansion and white fill
+pub fn rotate_image(img: &GrayImage, angle_degrees: f32) -> GrayImage {
+    let (w, h) = img.dimensions();
+    let rad = angle_degrees.to_radians();
+    let cos_a = rad.cos();
+    let sin_a = rad.sin();
+    
+    // Calculate new dimensions (Bounding Box)
+    let new_w = (w as f32 * cos_a.abs() + h as f32 * sin_a.abs()).ceil() as u32;
+    let new_h = (w as f32 * sin_a.abs() + h as f32 * cos_a.abs()).ceil() as u32;
+    
+    // Centers
+    let cx = w as f32 / 2.0;
+    let cy = h as f32 / 2.0;
+    let new_cx = new_w as f32 / 2.0;
+    let new_cy = new_h as f32 / 2.0;
+    
+    // Create new white image (Quiet Zone)
+    let mut new_img = GrayImage::from_pixel(new_w, new_h, Luma([255]));
+
+    let max_x = (w as f32 - 1.0);
+    let max_y = (h as f32 - 1.0);
+
+    for y in 0..new_h {
+        for x in 0..new_w {
+            // Shift to center
+            let dx = x as f32 - new_cx;
+            let dy = y as f32 - new_cy;
+            
+            // Inverse transform (Destination -> Source)
+            let src_x = dx * cos_a + dy * sin_a + cx;
+            let src_y = -dx * sin_a + dy * cos_a + cy;
+            
+            // Check bounds strictly to avoid black artifacts from bilinear_sample
+            if src_x < 0.0 || src_x > max_x || src_y < 0.0 || src_y > max_y {
+                 // Keep white (255)
+                 continue;
+            }
+            
+            let pixel = bilinear_sample(img, src_x, src_y);
+            new_img.put_pixel(x, y, Luma([pixel]));
+        }
+    }
+    new_img
+}
+
+
+/// Map a point from the rotated image coordinate system back to the original image system
+pub fn map_rotated_point_back(
+    x: f32, 
+    y: f32, 
+    orig_w: u32, 
+    orig_h: u32, 
+    angle_degrees: f32
+) -> (f32, f32) {
+    let rad = angle_degrees.to_radians();
+    let cos_a = rad.cos();
+    let sin_a = rad.sin();
+    
+    // Calculate new dimensions (same logic as rotate_image to get new_cx/cy)
+    let new_w = (orig_w as f32 * cos_a.abs() + orig_h as f32 * sin_a.abs()).ceil() as f32;
+    let new_h = (orig_w as f32 * sin_a.abs() + orig_h as f32 * cos_a.abs()).ceil() as f32;
+    
+    let cx = orig_w as f32 / 2.0;
+    let cy = orig_h as f32 / 2.0;
+    let new_cx = new_w / 2.0;
+    let new_cy = new_h / 2.0;
+    
+    // Shift to center of rotated image
+    let dx = x - new_cx;
+    let dy = y - new_cy;
+    
+    // Inverse transform (Rotated -> Original) corresponds to the "src_x" calculation in rotate_image
+    let src_x = dx * cos_a + dy * sin_a + cx;
+    let src_y = -dx * sin_a + dy * cos_a + cy;
+    
+    (src_x, src_y)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

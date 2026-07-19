@@ -46,8 +46,18 @@ fn test_ml_detection_on_real_image() {
         println!("--- Detection #{} (Conf: {:.2}) ---", i, d.confidence);
         println!("BBox: {:?}", d.bbox);
         
-        // Save cropped image for inspection if needed (optional)
-        // d.image.save(format!("debug_crop_{}.png", i)).unwrap();
+        // Save cropped image for inspection - CONFIRM THRESHOLDING
+        let debug_path = format!("debug_crop_threshold_{}.png", i);
+        d.image.save(&debug_path).unwrap();
+        println!("Saved thresholded crop to: {}", debug_path);
+
+        // Verify it is binary
+        let is_binary = d.image.pixels().all(|p| p.0[0] == 0 || p.0[0] == 255);
+        if is_binary {
+            println!("✅ Image is binary (Adaptive Threshold applied)");
+        } else {
+            println!("❌ Image is NOT binary (Adaptive Threshold failed?)");
+        }
 
         // 4. Try to Decode the crop
         match decoder.decode(&d.image) {

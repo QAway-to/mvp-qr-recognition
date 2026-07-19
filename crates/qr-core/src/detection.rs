@@ -76,11 +76,11 @@ impl QRDetector {
     }
     
     /// Обнаружение всех QR-кодов на изображении
-    pub fn detect(&self, img: &GrayImage) -> Vec<DetectedQR> {
+    pub fn detect(&self, img: &GrayImage, threshold: Option<f32>) -> Vec<DetectedQR> {
         // 0. Если есть ML-детектор, пробуем его сначала (или комбинируем)
         #[cfg(feature = "ml")]
         if let Some(ml) = &self.ml_detector {
-           if let Ok(ml_results) = ml.detect(img) {
+           if let Ok(ml_results) = ml.detect(img, threshold) {
                if !ml_results.is_empty() {
                    // Можно вернуть ML результаты, или объединить с алгоритмическими
                    return ml_results;

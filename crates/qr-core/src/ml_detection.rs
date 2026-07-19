@@ -16,7 +16,7 @@ impl OnnxDetector {
         let mut cursor = std::io::Cursor::new(model_bytes);
         let model = tract_onnx::onnx()
             .model_for_read(&mut cursor)?
-            .with_input_fact(0, f32::fact([1, 3, 640, 640]).into())? // Force input shape
+            .with_input_fact(0, f32::fact([1, 3, 416, 416]).into())? // Force input shape
             .into_optimized()?
             .into_runnable()?;
 
@@ -24,9 +24,9 @@ impl OnnxDetector {
     }
 
     /// Detect QR codes in image
-    pub fn detect(&self, img: &GrayImage) -> anyhow::Result<Vec<DetectedQR>> {
+    pub fn detect(&self, img: &GrayImage, threshold: Option<f32>) -> anyhow::Result<Vec<DetectedQR>> {
         let (orig_w, orig_h) = img.dimensions();
-        const MODEL_SIZE: u32 = 640;
+        const MODEL_SIZE: u32 = 416;
 
         // 1. Preprocessing: Resize to 640x640 (Stretch for speed/simplicity)
         // Convert Gray to RGB by triplicating channels (YOLO expects 3 channels)
@@ -44,8 +44,8 @@ impl OnnxDetector {
 
         for y in 0..MODEL_SIZE {
             for x in 0..MODEL_SIZE {
-                // Normalization: Try 0-255 (Some models include normalization)
-                let pixel = resized.get_pixel(x, y)[0] as f32;
+                // Normalization: YOLOv8 expects 0.0 - 1.0
+                let pixel = (resized.get_pixel(x, y)[0] as f32) / 255.0;
                 plane_r.push(pixel);
                 plane_g.push(pixel);
                 plane_b.push(pixel);
@@ -79,7 +79,8 @@ impl OnnxDetector {
         let num_anchors = shape[2];
         
         let mut detections = Vec::new();
-        let conf_threshold = 0.6;
+        let conf_threshold = threshold.unwrap_or(0.55);
+        let mut overall_max = 0.0;
 
         // Iterate over anchors
         for i in 0..num_anchors {
@@ -97,6 +98,8 @@ impl OnnxDetector {
                     best_class = c;
                 }
             }
+            
+            if max_score > overall_max { overall_max = max_score; }
 
             if max_score > conf_threshold {
                 let cx = output[[0, 0, i]];
@@ -110,12 +113,14 @@ impl OnnxDetector {
                 let y2 = cy + h / 2.0;
                 
                 // Filter: Only accept Class 1 (QR Code) - Piero2411 model
+                // NOTE: Depending on model, class might be 0 or 1.
+                // Piero typically has 2 classes: Barcode, QR.
+                // We should log best_class to be sure.
                 if best_class == 1 {
                     detections.push(BBox { x1, y1, x2, y2, score: max_score, class: best_class });
                 }
             }
         }
-        
         log::info!("OnnxDetector: Raw detections > {}: {}", conf_threshold, detections.len());
         
         // Debug: Print class counts
@@ -147,53 +152,52 @@ impl OnnxDetector {
                 continue;
             }
 
-            // Crop image
-            let mut crop = image::imageops::crop_imm(img, x, y, width, height).to_image();
-            let mut corners_abs = [
-                (x, y), 
-                (x + width, y), 
-                (x + width, y + height), 
-                (x, y + height)
+            // 1. Calculate Padded Crop
+            let padding = 40; // px (Increased for safety)
+            let pad_x = (x as i32 - padding as i32).max(0) as u32;
+            let pad_y = (y as i32 - padding as i32).max(0) as u32;
+            let pad_w = (width + 2 * padding).min(orig_w - pad_x);
+            let pad_h = (height + 2 * padding).min(orig_h - pad_y);
+
+            let crop = image::imageops::crop_imm(img, pad_x, pad_y, pad_w, pad_h).to_image();
+
+            // 2. Apply Adaptive Threshold (Clean up glare/shadows)
+            // Dynamic block size: ~1/16 of crop width, but clamped.
+            // MUST be odd.
+            let mut blk = (pad_w / 16) as u32;
+            if blk % 2 == 0 { blk += 1; }
+            let blk = blk.clamp(25, 127); // Min 25 (for small QR), Max 127 (performance)
+
+            let processor = ImageProcessor::new(ProcessingConfig {
+                adaptive_threshold: true,
+                block_size: blk, 
+                ..Default::default()
+            });
+            
+            let thresholded = processor.adaptive_threshold(&crop);
+            
+            let corners_abs = [
+                (pad_x, pad_y), 
+                (pad_x + pad_w, pad_y), 
+                (pad_x + pad_w, pad_y + pad_h), 
+                (pad_x, pad_y + pad_h)
             ];
 
-            let processor = ImageProcessor::new(ProcessingConfig::default());
+            // 3. Store Result (Dual Candidate Strategy)
             
-            if let Some(corners) = processor.find_corners(&crop) {
-                 log::info!("Corners found for Box #{}. Refine & Warp...", i);
-                 let side_len = width.max(height); 
-                 
-                 let dst = [
-                     nalgebra::Point2::new(0.0, 0.0),
-                     nalgebra::Point2::new(side_len as f32, 0.0),
-                     nalgebra::Point2::new(side_len as f32, side_len as f32),
-                     nalgebra::Point2::new(0.0, side_len as f32),
-                 ];
-                 
-                 if let Some(h) = geometry::find_homography(corners, dst) {
-                     log::info!("Homography calculated. Warping...");
-                     let warped = geometry::warp_perspective(&crop, &h, side_len, side_len);
-                     crop = warped;
-                     
-                     // Update corners display (approximate)
-                     let offset_x = x as f32;
-                     let offset_y = y as f32;
-                     corners_abs = [
-                         ((corners[0].x + offset_x) as u32, (corners[0].y + offset_y) as u32),
-                         ((corners[1].x + offset_x) as u32, (corners[1].y + offset_y) as u32),
-                         ((corners[2].x + offset_x) as u32, (corners[2].y + offset_y) as u32),
-                         ((corners[3].x + offset_x) as u32, (corners[3].y + offset_y) as u32),
-                     ];
-                 } else {
-                     log::warn!("Homography calculation failed");
-                 }
-            } else {
-                log::info!("No precise corners found in crop. Using full bbox crop.");
-            }
-
+            // Candidate A: Adaptive Threshold (Best for glare/shadows)
             qr_results.push(DetectedQR {
-                bbox: [x, y, width, height],
+                bbox: [pad_x, pad_y, pad_w, pad_h],
                 corners: corners_abs,
-                image: crop,
+                image: thresholded, 
+                confidence: bbox.score,
+            });
+
+            // Candidate B: Raw Crop (Fallback if adaptive fails)
+            qr_results.push(DetectedQR {
+                bbox: [pad_x, pad_y, pad_w, pad_h],
+                corners: corners_abs,
+                image: crop, 
                 confidence: bbox.score,
             });
         }
